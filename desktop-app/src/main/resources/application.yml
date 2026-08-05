@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: joseon-night
+  main:
+    banner-mode: "off"
+    web-application-type: none
+
+armeria:
+  ports:
+    - address: 127.0.0.1
+      port: 8080
+      protocols:
+        - HTTP
+  health-check-path: /internal/healthcheck
+  docs-path: ""
+  metrics-path: ""
+  graceful-shutdown-quiet-period-millis: -1
+  graceful-shutdown-timeout-millis: -1
+
+logging:
+  level:
+    root: INFO
+    com.linecorp.armeria: WARN

@@ -1,0 +1,82 @@
+package kr.vamsur.domain.gameplay;
+
+/**
+ * Numeric invariants for one game session.
+ */
+public record GameRules(
+        double durationSeconds,
+        double playerSpeed,
+        double playerRadius,
+        double enemySpawnRadius,
+        double enemySpawnIntervalSeconds,
+        double enemySpeed,
+        double enemyHealth,
+        double enemyRadius,
+        double projectileSpeed,
+        double projectileDamage,
+        double attackCooldownSeconds,
+        double soulMagnetRadius,
+        int initialExperienceToNextLevel,
+        int maxEnemies,
+        int maxProjectiles,
+        int maxSoulFlames
+) {
+
+    public GameRules {
+        requirePositive(durationSeconds, "durationSeconds");
+        requirePositive(playerSpeed, "playerSpeed");
+        requirePositive(playerRadius, "playerRadius");
+        requirePositive(enemySpawnRadius, "enemySpawnRadius");
+        requirePositive(enemySpawnIntervalSeconds, "enemySpawnIntervalSeconds");
+        requireNotNegative(enemySpeed, "enemySpeed");
+        requirePositive(enemyHealth, "enemyHealth");
+        requirePositive(enemyRadius, "enemyRadius");
+        requirePositive(projectileSpeed, "projectileSpeed");
+        requirePositive(projectileDamage, "projectileDamage");
+        requirePositive(attackCooldownSeconds, "attackCooldownSeconds");
+        requirePositive(soulMagnetRadius, "soulMagnetRadius");
+        requirePositive(initialExperienceToNextLevel, "initialExperienceToNextLevel");
+        requirePositive(maxEnemies, "maxEnemies");
+        requirePositive(maxProjectiles, "maxProjectiles");
+        requirePositive(maxSoulFlames, "maxSoulFlames");
+    }
+
+    public static GameRules standard() {
+        return new GameRules(
+                300.0,
+                240.0,
+                18.0,
+                760.0,
+                0.75,
+                55.0,
+                20.0,
+                17.0,
+                520.0,
+                20.0,
+                0.65,
+                100.0,
+                5,
+                220,
+                160,
+                300
+        );
+    }
+
+    private static void requirePositive(double value, String name) {
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalArgumentException(name + " must be a finite positive number");
+        }
+    }
+
+    private static void requireNotNegative(double value, String name) {
+        if (!Double.isFinite(value) || value < 0.0) {
+            throw new IllegalArgumentException(name + " must be a finite non-negative number");
+        }
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+    }
+}

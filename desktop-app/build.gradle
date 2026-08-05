@@ -1,0 +1,35 @@
+plugins {
+    id 'application'
+    id 'org.springframework.boot'
+    id 'org.openjfx.javafxplugin'
+}
+
+dependencies {
+    implementation project(':game-core')
+    implementation enforcedPlatform("org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}")
+    implementation platform("com.linecorp.armeria:armeria-bom:${rootProject.ext.armeriaVersion}")
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'com.linecorp.armeria:armeria-spring-boot3-starter'
+    compileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+javafx {
+    version = rootProject.ext.javafxVersion
+    modules = ['javafx.controls']
+}
+
+application {
+    mainClass = 'kr.vamsur.adapter.configuration.DesktopLauncher'
+}
+
+springBoot {
+    mainClass = 'kr.vamsur.adapter.configuration.DesktopLauncher'
+}
+
+tasks.named('bootJar') {
+    enabled = false
+}

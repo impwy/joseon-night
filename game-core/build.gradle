@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    testImplementation platform("org.junit:junit-bom:${rootProject.ext.junitVersion}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
