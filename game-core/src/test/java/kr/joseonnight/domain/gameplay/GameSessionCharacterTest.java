@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class GameSessionCharacterTest {
@@ -50,7 +51,7 @@ class GameSessionCharacterTest {
         session.tick(0.01);
 
         assertEquals(GamePhase.DEFEAT, session.state().phase());
-        assertEquals(new SoundEvent(1L, "DEFEAT"), session.state().soundEvents().getFirst());
+        assertEquals(new SoundEvent(1L, SoundCue.DEFEAT), session.state().soundEvents().getFirst());
     }
 
     @Test
@@ -59,14 +60,41 @@ class GameSessionCharacterTest {
         first.tick(0.01);
 
         var firstSnapshotEvents = first.state().soundEvents();
-        assertEquals(new SoundEvent(1L, "GUARD"), firstSnapshotEvents.getFirst());
+        assertEquals(new SoundEvent(1L, SoundCue.GUARD), firstSnapshotEvents.getFirst());
         assertEquals(firstSnapshotEvents, first.state().soundEvents());
         first.tick(2.0);
-        assertEquals(new SoundEvent(2L, "DEFEAT"), first.state().soundEvents().getLast());
+        assertEquals(new SoundEvent(3L, SoundCue.DEFEAT), first.state().soundEvents().getLast());
 
         GameSession restarted = GameSession.running(contactRules(), 15L);
         restarted.tick(0.01);
-        assertEquals(new SoundEvent(1L, "GUARD"), restarted.state().soundEvents().getFirst());
+        assertEquals(new SoundEvent(1L, SoundCue.GUARD), restarted.state().soundEvents().getFirst());
+    }
+
+    @Test
+    void aMultiProjectileVolleyEmitsExactlyOneAttackCue() {
+        GameSession session = GameSession.running(firingRules(), 17L, CharacterType.GALE_SHAMAN);
+
+        session.tick(0.01);
+
+        GameState state = session.state();
+        assertEquals(2, state.projectiles().size());
+        assertEquals(
+                List.of(new SoundEvent(1L, SoundCue.FLAME_FAN_ATTACK)),
+                state.soundEvents());
+    }
+
+    @Test
+    void frequentAttackCuesDoNotGrowTheSnapshotWithoutBound() {
+        GameSession session = GameSession.running(firingRules(), 19L, CharacterType.GALE_SHAMAN);
+
+        for (int tick = 0; tick < 1_000; tick++) {
+            session.tick(0.01);
+        }
+
+        List<SoundEvent> events = session.state().soundEvents();
+        assertEquals(64, events.size());
+        assertTrue(events.getFirst().id() > 1L);
+        assertTrue(events.getLast().id() > events.getFirst().id());
     }
 
     @Test
@@ -125,6 +153,26 @@ class GameSessionCharacterTest {
                 5,
                 10,
                 10,
+                10);
+    }
+
+    private static GameRules firingRules() {
+        return new GameRules(
+                300.0,
+                240.0,
+                18.0,
+                200.0,
+                0.01,
+                0.0,
+                10_000.0,
+                17.0,
+                100.0,
+                1.0,
+                0.12,
+                100.0,
+                5,
+                1,
+                10_000,
                 10);
     }
 }

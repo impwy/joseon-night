@@ -150,13 +150,24 @@ Wide 16:9 original Joseon dark-fantasy ruined courtyard framed by black bamboo a
 
 | 자산 | 파일 | 제작과 검수 |
 | --- | --- | --- |
-| 달빛 폐허 BGM | `desktop-app/src/main/resources/assets/audio/bgm-moonlit-ruins.wav` | 12초, 22.05kHz mono PCM. 110·165·220Hz 화음과 느린 진폭 변조를 코드로 합성 |
+| 로비 BGM | `desktop-app/src/main/resources/assets/audio/bgm-lobby.wav` | 36초, 느린 오음계 선율·저음 지속음·종소리풍 고음과 잔잔한 움직임을 합성. 반복 시작·끝의 표본과 에너지를 자동 검사 |
+| 전투 BGM | `desktop-app/src/main/resources/assets/audio/bgm-combat.wav` | 48초, 빠른 오음계 선율·저음·북 장단풍 타격과 결정적 잡음을 합성. 반복 시작·끝의 표본과 에너지를 자동 검사 |
+| 기본 아이템 공격 6종 | `sfx-attack-seal-talisman.wav`, `sfx-attack-flame-fan.wav`, `sfx-attack-exorcist-sword.wav`, `sfx-attack-returning-boomerang.wav`, `sfx-attack-thunder-bell.wav`, `sfx-attack-spirit-gourd.wav` | 주파수 이동, 배음, 짧은 잡음과 좌우 위치를 항목별로 다르게 합성 |
+| 진화 아이템 공격 6종 | `sfx-attack-ten-thousand-seal-array.wav`, `sfx-attack-heavenly-thunder-seal.wav`, `sfx-attack-inferno-returning-wheel.wav`, `sfx-attack-blue-flame-spirit-gourd.wav`, `sfx-attack-lunar-eclipse-twin-blades.wav`, `sfx-attack-thunder-flame-divine-orb.wav` | 기본 아이템보다 긴 잔향과 서로 다른 음역·배음·좌우 위치로 합성 |
 | 레벨업 효과 | `desktop-app/src/main/resources/assets/audio/sfx-level-up.wav` | 0.8초 상승 음정 합성 |
 | 호신결계 효과 | `desktop-app/src/main/resources/assets/audio/sfx-guard.wav` | 0.45초 하강 공명음 합성 |
 | 상자 효과 | `desktop-app/src/main/resources/assets/audio/sfx-chest.wav` | 0.9초 삼화음 합성 |
 | 패배 효과 | `desktop-app/src/main/resources/assets/audio/sfx-defeat.wav` | 0.8초 하강 화음 합성 |
+| 이전 달빛 폐허 BGM | `desktop-app/src/main/resources/assets/audio/bgm-moonlit-ruins.wav` | 2차 구현 호환 기록으로 보존하지만 현재 장면 재생에는 사용하지 않음 |
 
-오디오는 외부 음원을 사용하지 않고 Python 표준 `wave`와 수학 함수로 직접 합성했다. 모든 파일은 16비트 mono PCM WAV이며 프로젝트 MIT 라이선스 범위에 포함한다.
+새 BGM과 아이템 효과음은 외부 음원이나 샘플을 사용하지 않고 `tools/generate_audio_assets.py`의 Python 표준 `wave`와 수학 함수로 직접 합성했다. 모두 22.05kHz, 16비트, 스테레오 PCM WAV이며 프로젝트 MIT 라이선스 범위에 포함한다. 고정 seed의 자체 난수 생성기를 사용해 같은 소스에서 항상 같은 파일이 만들어진다.
+
+```bash
+python3 tools/generate_audio_assets.py
+python3 tools/generate_audio_assets.py --check-only
+```
+
+첫 명령은 2개 BGM과 12개 공격 효과음을 재생성한 뒤 검수하고, 두 번째 명령은 파일을 바꾸지 않고 표본률·채널·비트 깊이·길이·무음·클리핑과 BGM 반복 경계를 검사한다. Java 테스트는 모든 `SoundCue`가 실제 파일과 연결되는지도 확인한다.
 
 ## 공통 검수 결과
 
@@ -165,6 +176,8 @@ Wide 16:9 original Joseon dark-fantasy ruined courtyard framed by black bamboo a
 3. 바닥은 8×8로 반복한 미리보기에서 두드러지는 이음선을 찾지 못했다.
 4. 최근접 확대에서 흐림 없이 사냥꾼, 도깨비, 부적, 혼불이 즉시 구분된다.
 5. 원작 이미지나 참조 이미지를 입력하지 않았고 독자적인 조선 야행 팔레트와 실루엣을 사용했다.
+6. 새 오디오 14개는 22.05kHz, 16비트 스테레오 PCM이며 무음·클리핑·잘린 표본이 없고 BGM 반복 경계를 통과했다.
+7. 오디오를 재생성하기 전과 후의 SHA-256이 같아 제작 결과가 재현됨을 확인했다.
 
 ## 제작 이력
 
@@ -173,3 +186,4 @@ Wide 16:9 original Joseon dark-fantasy ruined courtyard framed by black bamboo a
 | 2026-08-05 | Codex 내장 `image_gen`, `remove_chroma_key.py`, Pillow 12.2.0 | 최초 5개 자산 생성, 투명화, 32×32 변환과 검수 |
 | 2026-08-05 | Codex 내장 `image_gen`, `remove_chroma_key.py`, Pillow 12.2.0, Python `wave` | 질풍 무녀·상자·아이템·로비 배경과 자체 합성 오디오 추가 |
 | 2026-08-05 | Google 공식 Sign in assets | 승인된 Google G 아이콘을 로그인 버튼 자산으로 추가 |
+| 2026-08-05 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 36초 로비·48초 전투 BGM과 기본·진화 아이템 공격 효과음 12개를 결정적으로 합성하고 자동 검수 추가 |

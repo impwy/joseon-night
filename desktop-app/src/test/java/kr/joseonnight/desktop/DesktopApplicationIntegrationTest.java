@@ -617,7 +617,7 @@ class DesktopApplicationIntegrationTest {
                       "chests":[{"id":7,"type":"YELLOW","x":800.0,"y":0.0,"opened":false}],
                       "chestIndicators":[{"chestId":7,"directionX":1.0,"directionY":0.0,"distance":800.0}],
                       "levelUpOptions":__LEVEL_UP_OPTIONS__,"chestRewardOptions":[],
-                      "soundEvents":[{"id":1,"type":"TALISMAN_FIRED"},{"id":2,"type":"ENEMY_DEFEATED"}],
+                      "soundEvents":[{"id":1,"type":"SEAL_TALISMAN_ATTACK"},{"id":2,"type":"DEFEAT"}],
                       "futureServerField":"ignored"
                     }}}
                     """

@@ -6,7 +6,9 @@ import java.util.Arrays;
 import kr.joseonnight.application.gameplay.GameService;
 import kr.joseonnight.application.gameplay.provided.GameSessionHandle;
 import kr.joseonnight.desktop.gameplay.GamePhase;
+import kr.joseonnight.desktop.gameplay.SoundEventSnapshot;
 import kr.joseonnight.domain.gameplay.CharacterType;
+import kr.joseonnight.domain.gameplay.SoundEvent;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -23,6 +25,25 @@ class DesktopCoreContractTest {
                         .toList());
         assertThat(kr.joseonnight.desktop.gameplay.UpgradeType.ITEM_DAMAGE.description())
                 .contains("모든 아이템");
+    }
+
+    @Test
+    void soundCueIdentifiersAndJsonShapeMatchTheGameCoreSocketContract() {
+        assertThat(Arrays.stream(kr.joseonnight.desktop.gameplay.SoundCue.values())
+                .map(Enum::name)
+                .toList())
+                .containsExactlyElementsOf(Arrays.stream(kr.joseonnight.domain.gameplay.SoundCue.values())
+                        .map(Enum::name)
+                        .toList());
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        String coreJson = objectMapper.writeValueAsString(
+                new SoundEvent(7L, kr.joseonnight.domain.gameplay.SoundCue.FLAME_FAN_ATTACK));
+        SoundEventSnapshot desktopEvent = objectMapper.readValue(coreJson, SoundEventSnapshot.class);
+
+        assertThat(desktopEvent.id()).isEqualTo(7L);
+        assertThat(desktopEvent.type())
+                .isEqualTo(kr.joseonnight.desktop.gameplay.SoundCue.FLAME_FAN_ATTACK);
     }
 
     @Test

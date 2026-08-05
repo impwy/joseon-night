@@ -30,6 +30,7 @@ public final class GameSession {
     private static final int YELLOW_CHEST_COUNT = 3;
     private static final int PURPLE_CHEST_COUNT = 2;
     private static final int MAX_PROJECTILES_PER_VOLLEY = 5;
+    private static final int MAX_RECENT_SOUND_EVENTS = 64;
 
     private final GameRules rules;
     private final Random random;
@@ -246,7 +247,7 @@ public final class GameSession {
             if (squaredDistance(player.x, player.y, chest.x, chest.y)
                     <= collisionDistance * collisionDistance) {
                 chests.remove(index);
-                emitSound("CHEST_OPENED");
+                emitSound(SoundCue.CHEST_OPENED);
                 chestRewardOptions = chest.type == ChestType.PURPLE
                         ? loadout.purpleChestOptions(random)
                         : loadout.yellowChestOptions(random);
@@ -336,7 +337,7 @@ public final class GameSession {
         if (player.barrierAvailable) {
             player.barrierAvailable = false;
             player.invulnerabilityRemainingSeconds = BARRIER_INVULNERABILITY_SECONDS;
-            emitSound("GUARD");
+            emitSound(SoundCue.GUARD);
             return false;
         }
         finish(GamePhase.DEFEAT);
@@ -386,19 +387,34 @@ public final class GameSession {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY,
                 itemProjectileCount + (itemLevel - 1) / 2 + itemShotBonus(item));
         double damage = itemBaseDamage * itemDamageMultiplier(item) * (1.0 + 0.20 * (itemLevel - 1));
-        fireVolley(item.id(), shots, damage, itemSpreadDegrees(item));
+        fireVolley(item.id(), SoundCue.forItem(item), shots, damage, itemSpreadDegrees(item));
     }
 
     private void fireEvolution(EvolutionType evolution) {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY, itemProjectileCount + 3);
-        fireVolley(evolution.id(), shots, itemBaseDamage * 3.0, 18.0);
+        fireVolley(
+                evolution.id(),
+                SoundCue.forEvolution(evolution),
+                shots,
+                itemBaseDamage * 3.0,
+                18.0);
     }
 
-    private void fireVolley(String kindId, int requestedShots, double damage, double spreadDegrees) {
+    private void fireVolley(
+            String kindId,
+            SoundCue soundCue,
+            int requestedShots,
+            double damage,
+            double spreadDegrees
+    ) {
         Enemy target = nearestEnemy();
         double baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
         int availableCapacity = rules.maxProjectiles() - projectiles.size();
         int shots = Math.min(requestedShots, availableCapacity);
+        if (shots <= 0) {
+            return;
+        }
+        emitSound(soundCue);
         double center = (shots - 1) / 2.0;
         for (int index = 0; index < shots; index++) {
             double angle = baseAngle + Math.toRadians(spreadDegrees) * (index - center);
@@ -578,7 +594,7 @@ public final class GameSession {
         }
         input = InputState.idle();
         phase = GamePhase.LEVEL_UP;
-        emitSound("LEVEL_UP");
+        emitSound(SoundCue.LEVEL_UP);
         levelUpOptions = loadout.levelUpOptions(random);
         upgradeChoices = levelUpOptions.stream()
                 .filter(option -> option.kind() == RewardKind.UPGRADE)
@@ -625,9 +641,9 @@ public final class GameSession {
     private void finish(GamePhase result) {
         phase = result;
         if (result == GamePhase.DEFEAT) {
-            emitSound("DEFEAT");
+            emitSound(SoundCue.DEFEAT);
         } else if (result == GamePhase.VICTORY) {
-            emitSound("VICTORY");
+            emitSound(SoundCue.VICTORY);
         }
         input = InputState.idle();
         upgradeChoices = List.of();
@@ -645,7 +661,10 @@ public final class GameSession {
         return nextEntityId++;
     }
 
-    private void emitSound(String type) {
+    private void emitSound(SoundCue type) {
+        if (soundEvents.size() == MAX_RECENT_SOUND_EVENTS) {
+            soundEvents.removeFirst();
+        }
         soundEvents.add(new SoundEvent(nextSoundEventId++, type));
     }
 
