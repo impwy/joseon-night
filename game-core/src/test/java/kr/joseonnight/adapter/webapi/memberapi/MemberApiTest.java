@@ -3,13 +3,15 @@ package kr.joseonnight.adapter.webapi.memberapi;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
-import jakarta.validation.Validation;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import kr.joseonnight.adapter.security.jwt.MemberPrincipal;
+import kr.joseonnight.adapter.webapi.RestApiExceptionHandler;
 import kr.joseonnight.application.character.provided.CharacterCatalog;
 import kr.joseonnight.application.character.provided.CharacterCatalogEntry;
 import kr.joseonnight.application.character.provided.CharacterCatalogFinder;
@@ -29,30 +31,48 @@ import kr.joseonnight.domain.item.ItemCategory;
 import kr.joseonnight.domain.member.MemberRole;
 import kr.joseonnight.domain.member.MemberStatus;
 import kr.joseonnight.domain.membersettings.TargetFps;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
+import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 class MemberApiTest {
 
     private static final long MEMBER_ID = 1L;
     private static final Instant NOW = Instant.parse("2026-08-05T12:00:00Z");
     private static final MemberPrincipal PRINCIPAL = new MemberPrincipal(MEMBER_ID, MemberRole.PLAYER);
+    private static final Authentication AUTHENTICATION = UsernamePasswordAuthenticationToken.authenticated(
+            PRINCIPAL,
+            null,
+            List.of(new SimpleGrantedAuthority("ROLE_PLAYER"))
+    );
 
-    @Test
-    void bootstrapReturnsEveryCharacterWithUnlockAndNestedCatalogDetails() {
-        MemberFinder members = mock(MemberFinder.class);
-        MemberSettingsFinder settings = mock(MemberSettingsFinder.class);
-        MemberSettingsModifier settingsModifier = mock(MemberSettingsModifier.class);
-        MemberProgressionFinder progression = mock(MemberProgressionFinder.class);
-        PlayRecordFinder playRecords = mock(PlayRecordFinder.class);
-        CharacterCatalogFinder characters = mock(CharacterCatalogFinder.class);
-        ItemCatalogFinder items = mock(ItemCatalogFinder.class);
-        when(members.find(MEMBER_ID)).thenReturn(new MemberView(
-                MEMBER_ID, MemberRole.PLAYER, MemberStatus.ACTIVE, NOW, NOW
-        ));
-        when(settings.find(MEMBER_ID)).thenReturn(settingsView());
-        when(progression.unlockedCharacterIds(MEMBER_ID)).thenReturn(List.of("dokkaebi-hunter"));
-        when(characters.findCatalog()).thenReturn(characterCatalog());
-        when(items.findCatalog()).thenReturn(itemCatalog());
+    private MockMvcTester mvc;
+    private MemberFinder members;
+    private MemberSettingsFinder settings;
+    private MemberSettingsModifier settingsModifier;
+    private MemberProgressionFinder progression;
+    private PlayRecordFinder playRecords;
+    private CharacterCatalogFinder characters;
+    private ItemCatalogFinder items;
+
+    @BeforeEach
+    void setUp() {
+        members = mock(MemberFinder.class);
+        settings = mock(MemberSettingsFinder.class);
+        settingsModifier = mock(MemberSettingsModifier.class);
+        progression = mock(MemberProgressionFinder.class);
+        playRecords = mock(PlayRecordFinder.class);
+        characters = mock(CharacterCatalogFinder.class);
+        items = mock(ItemCatalogFinder.class);
+
         MemberApi api = new MemberApi(
                 members,
                 settings,
@@ -62,33 +82,53 @@ class MemberApiTest {
                 characters,
                 items
         );
-
-        MemberApi.BootstrapResponse response = api.bootstrap(PRINCIPAL);
-
-        assertThat(response.characters()).satisfiesExactly(
-                hunter -> {
-                    assertThat(hunter.id()).isEqualTo("dokkaebi-hunter");
-                    assertThat(hunter.displayName()).isEqualTo("도깨비 사냥꾼");
-                    assertThat(hunter.description()).isEqualTo("봉인 부적으로 싸운다.");
-                    assertThat(hunter.unlocked()).isTrue();
-                    assertThat(hunter.startingItem().id()).isEqualTo("seal-talisman");
-                    assertThat(hunter.startingItem().displayName()).isEqualTo("봉인 부적");
-                    assertThat(hunter.skill().id()).isEqualTo("protective-barrier");
-                    assertThat(hunter.skill().displayName()).isEqualTo("호신결계");
-                    assertThat(hunter.skill().description()).isEqualTo("한 번 충돌을 막는다.");
-                },
-                shaman -> {
-                    assertThat(shaman.id()).isEqualTo("gale-shaman");
-                    assertThat(shaman.unlocked()).isFalse();
-                    assertThat(shaman.startingItem().id()).isEqualTo("flame-fan");
-                    assertThat(shaman.skill().id()).isEqualTo("gale-step");
-                }
+        mvc = MockMvcTester.of(
+                List.of(api),
+                builder -> builder
+                        .setControllerAdvice(new RestApiExceptionHandler())
+                        .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
+                        .addFilters(new SecurityContextHolderFilter(
+                                new HttpSessionSecurityContextRepository()))
+                        .build()
         );
     }
 
     @Test
-    void patchSettingsUsesIndependentVolumesAndTargetFps() {
-        MemberSettingsModifier settingsModifier = mock(MemberSettingsModifier.class);
+    void bootstrapReturnsEveryCharacterWithUnlockAndNestedCatalogDetails() {
+        when(members.find(MEMBER_ID)).thenReturn(new MemberView(
+                MEMBER_ID, MemberRole.PLAYER, MemberStatus.ACTIVE, NOW, NOW
+        ));
+        when(settings.find(MEMBER_ID)).thenReturn(settingsView());
+        when(progression.unlockedCharacterIds(MEMBER_ID)).thenReturn(List.of("dokkaebi-hunter"));
+        when(characters.findCatalog()).thenReturn(characterCatalog());
+        when(items.findCatalog()).thenReturn(itemCatalog());
+
+        var result = mvc.get()
+                .uri("/api/v1/members/me/bootstrap")
+                .with(authentication(AUTHENTICATION))
+                .exchange();
+
+        assertThat(result).hasStatusOk();
+        var json = assertThat(result).bodyJson();
+        json.extractingPath("$.characters").asArray().hasSize(2);
+        json.extractingPath("$.characters[0].id").asString().isEqualTo("dokkaebi-hunter");
+        json.extractingPath("$.characters[0].displayName").asString().isEqualTo("도깨비 사냥꾼");
+        json.extractingPath("$.characters[0].description").asString().isEqualTo("봉인 부적으로 싸운다.");
+        json.extractingPath("$.characters[0].unlocked").asBoolean().isTrue();
+        json.extractingPath("$.characters[0].startingItem.id").asString().isEqualTo("seal-talisman");
+        json.extractingPath("$.characters[0].startingItem.displayName").asString().isEqualTo("봉인 부적");
+        json.extractingPath("$.characters[0].skill.id").asString().isEqualTo("protective-barrier");
+        json.extractingPath("$.characters[0].skill.displayName").asString().isEqualTo("호신결계");
+        json.extractingPath("$.characters[0].skill.description").asString().isEqualTo("한 번 충돌을 막는다.");
+        json.extractingPath("$.characters[1].id").asString().isEqualTo("gale-shaman");
+        json.extractingPath("$.characters[1].unlocked").asBoolean().isFalse();
+        json.extractingPath("$.characters[1].startingItem.id").asString().isEqualTo("flame-fan");
+        json.extractingPath("$.characters[1].skill.id").asString().isEqualTo("gale-step");
+        verify(members).find(MEMBER_ID);
+    }
+
+    @Test
+    void patchSettingsUsesAuthenticatedMemberIndependentVolumesAndTargetFps() {
         MemberSettingsModifyInfo modifyInfo = new MemberSettingsModifyInfo(
                 true, 45, 85, TargetFps.FPS_30
         );
@@ -96,51 +136,61 @@ class MemberApiTest {
                 MEMBER_ID, "야행꾼", true, 45, 85, TargetFps.FPS_30, NOW
         );
         when(settingsModifier.modify(MEMBER_ID, modifyInfo)).thenReturn(modified);
-        MemberApi api = new MemberApi(
-                mock(MemberFinder.class),
-                mock(MemberSettingsFinder.class),
-                settingsModifier,
-                mock(MemberProgressionFinder.class),
-                mock(PlayRecordFinder.class),
-                mock(CharacterCatalogFinder.class),
-                mock(ItemCatalogFinder.class)
-        );
 
-        MemberApi.SettingsResponse response = api.modifySettings(
-                PRINCIPAL,
-                new MemberApi.SettingsRequest(true, 45, 85, TargetFps.FPS_30)
-        );
+        var result = mvc.patch()
+                .uri("/api/v1/members/me/settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                          "muted": true,
+                          "musicVolume": 45,
+                          "effectsVolume": 85,
+                          "targetFps": "FPS_30"
+                        }
+                """)
+                .with(authentication(AUTHENTICATION))
+                .exchange();
 
-        assertThat(response.muted()).isTrue();
-        assertThat(response.musicVolume()).isEqualTo(45);
-        assertThat(response.effectsVolume()).isEqualTo(85);
-        assertThat(response.targetFps()).isEqualTo(TargetFps.FPS_30);
+        assertThat(result).hasStatusOk();
+        var json = assertThat(result).bodyJson();
+        json.extractingPath("$.muted").asBoolean().isTrue();
+        json.extractingPath("$.musicVolume").asNumber().isEqualTo(45);
+        json.extractingPath("$.effectsVolume").asNumber().isEqualTo(85);
+        json.extractingPath("$.targetFps").asString().isEqualTo("FPS_30");
         verify(settingsModifier).modify(MEMBER_ID, modifyInfo);
     }
 
     @Test
-    void settingsRequestRetainsNotNullMinAndMaxValidation() {
-        var validator = Validation.buildDefaultValidatorFactory().getValidator();
+    void patchSettingsRejectsOutOfRangeVolumesAndMissingTargetFps() {
+        var result = mvc.patch()
+                .uri("/api/v1/members/me/settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                          "muted": false,
+                          "musicVolume": -1,
+                          "effectsVolume": 101,
+                          "targetFps": null
+                        }
+                """)
+                .with(authentication(AUTHENTICATION))
+                .exchange();
 
-        var violations = validator.validate(new MemberApi.SettingsRequest(false, -1, 101, null));
-
-        assertThat(violations)
-                .extracting(violation -> violation.getPropertyPath().toString())
-                .containsExactlyInAnyOrder("musicVolume", "effectsVolume", "targetFps");
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(settingsModifier);
     }
 
     @Test
-    void settingsRequestRejectsEveryMissingField() {
-        var validator = Validation.buildDefaultValidatorFactory().getValidator();
-        MemberApi.SettingsRequest request = new MemberApi.SettingsRequest(
-                null, null, null, null);
+    void patchSettingsRejectsEveryMissingField() {
+        var result = mvc.patch()
+                .uri("/api/v1/members/me/settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(authentication(AUTHENTICATION))
+                .exchange();
 
-        var violations = validator.validate(request);
-
-        assertThat(violations)
-                .extracting(violation -> violation.getPropertyPath().toString())
-                .containsExactlyInAnyOrder(
-                        "muted", "musicVolume", "effectsVolume", "targetFps");
+        assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(settingsModifier);
     }
 
     private static MemberSettingsView settingsView() {
