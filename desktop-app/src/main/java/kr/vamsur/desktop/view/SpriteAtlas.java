@@ -1,4 +1,4 @@
-package kr.vamsur.adapter.javafx;
+package kr.vamsur.desktop.view;
 
 import java.io.IOException;
 import java.io.InputStream;

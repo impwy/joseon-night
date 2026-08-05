@@ -1,21 +1,15 @@
 spring:
   application:
-    name: joseon-night
+    name: joseon-night-desktop
   main:
     banner-mode: "off"
     web-application-type: none
 
-armeria:
-  ports:
-    - address: 127.0.0.1
-      port: 8080
-      protocols:
-        - HTTP
-  health-check-path: /internal/healthcheck
-  docs-path: ""
-  metrics-path: ""
-  graceful-shutdown-quiet-period-millis: -1
-  graceful-shutdown-timeout-millis: -1
+joseon-night:
+  desktop-api:
+    base-url: ${JOSEON_NIGHT_API_URL:http://127.0.0.1:8080}
+    connect-timeout: 2s
+    request-timeout: 2s
 
 logging:
   level:

@@ -6,6 +6,9 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
+import kr.vamsur.support.stereotype.DesktopApiAdapter;
+import kr.vamsur.support.stereotype.ValidatedApplicationService;
 import org.junit.jupiter.api.Test;
 
 class HexagonalArchitectureTest {
@@ -15,25 +18,42 @@ class HexagonalArchitectureTest {
             .importPackages("kr.vamsur");
 
     @Test
-    void domainOnlyDependsOnTheDomainAndJava() {
-        classes()
+    void domainDoesNotDependOnApplication() {
+        noClasses()
                 .that().resideInAPackage("kr.vamsur.domain..")
-                .should().onlyDependOnClassesThat().resideInAnyPackage(
-                        "java..",
-                        "kr.vamsur.domain.."
-                )
+                .should().dependOnClassesThat().resideInAPackage("kr.vamsur.application..")
                 .check(productionClasses);
     }
 
     @Test
-    void applicationOnlyDependsOnTheApplicationDomainAndJava() {
+    void validatedApplicationServicesStayAtSliceRoot() {
         classes()
-                .that().resideInAPackage("kr.vamsur.application..")
-                .should().onlyDependOnClassesThat().resideInAnyPackage(
-                        "java..",
-                        "kr.vamsur.application..",
-                        "kr.vamsur.domain.."
-                )
+                .that().areAnnotatedWith(ValidatedApplicationService.class)
+                .should().resideInAnyPackage("kr.vamsur.application.*")
+                .check(productionClasses);
+    }
+
+    @Test
+    void desktopApiAdaptersStayInTheirAdapterPackage() {
+        classes()
+                .that().areAnnotatedWith(DesktopApiAdapter.class)
+                .should().resideInAPackage("kr.vamsur.adapter.desktopapi")
+                .check(productionClasses);
+    }
+
+    @Test
+    void domainSlicesAreFreeOfCycles() {
+        SlicesRuleDefinition.slices()
+                .matching("kr.vamsur.domain.(*)..")
+                .should().beFreeOfCycles()
+                .check(productionClasses);
+    }
+
+    @Test
+    void applicationSlicesAreFreeOfCycles() {
+        SlicesRuleDefinition.slices()
+                .matching("kr.vamsur.application.(*)..")
+                .should().beFreeOfCycles()
                 .check(productionClasses);
     }
 
@@ -42,6 +62,25 @@ class HexagonalArchitectureTest {
         noClasses()
                 .that().resideInAPackage("kr.vamsur.application..provided..")
                 .should().dependOnClassesThat().resideInAPackage("kr.vamsur.application.gameplay")
+                .check(productionClasses);
+    }
+
+    @Test
+    void domainAndApplicationDoNotDependOnAdapters() {
+        noClasses()
+                .that().resideInAnyPackage("kr.vamsur.domain..", "kr.vamsur.application..")
+                .should().dependOnClassesThat().resideInAPackage("kr.vamsur.adapter..")
+                .check(productionClasses);
+    }
+
+    @Test
+    void coreDoesNotUseDesktopOrSpringWebTechnology() {
+        noClasses()
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "javafx..",
+                        "org.springframework.web..",
+                        "jakarta.servlet.."
+                )
                 .check(productionClasses);
     }
 }

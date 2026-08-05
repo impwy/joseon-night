@@ -1,9 +1,9 @@
-package kr.vamsur.adapter.javafx;
+package kr.vamsur.desktop.view;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
-import java.util.function.Consumer;
 import javafx.animation.AnimationTimer;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -18,12 +18,13 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import kr.vamsur.application.gameplay.provided.EntitySnapshot;
-import kr.vamsur.application.gameplay.provided.GameSnapshot;
-import kr.vamsur.application.gameplay.provided.GameUseCase;
-import kr.vamsur.domain.gameplay.GamePhase;
-import kr.vamsur.domain.gameplay.InputState;
-import kr.vamsur.domain.gameplay.UpgradeType;
+import kr.vamsur.desktop.client.DesktopApiClient;
+import kr.vamsur.desktop.gameplay.DesktopApiStatus;
+import kr.vamsur.desktop.gameplay.EntitySnapshot;
+import kr.vamsur.desktop.gameplay.GamePhase;
+import kr.vamsur.desktop.gameplay.GameSnapshot;
+import kr.vamsur.desktop.gameplay.InputState;
+import kr.vamsur.desktop.gameplay.UpgradeType;
 
 /**
  * Canvas combat renderer with JavaFX controls layered above it.
@@ -43,8 +44,7 @@ public final class GameView extends StackPane {
             + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-background-radius: 8;"
             + "-fx-padding: 10 18 10 18;";
 
-    private final GameUseCase game;
-    private final Consumer<GameSnapshot> statusPublisher;
+    private final DesktopApiClient desktopApiClient;
     private final SpriteAtlas sprites = new SpriteAtlas();
     private final Canvas canvas = new Canvas();
     private final VBox lobbyPanel = new VBox(16);
@@ -55,6 +55,7 @@ public final class GameView extends StackPane {
     private final Label levelLabel = hudLabel();
     private final Label experienceLabel = hudLabel();
     private final Label killLabel = hudLabel();
+    private final Label connectionLabel = new Label();
     private final Label resultTitle = new Label();
     private final Label resultSummary = new Label();
     private final AnimationTimer gameLoop;
@@ -69,10 +70,9 @@ public final class GameView extends StackPane {
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
-            justification = "The JavaFX view intentionally keeps the Spring-owned game use-case collaborator.")
-    public GameView(GameUseCase game, Consumer<GameSnapshot> statusPublisher) {
-        this.game = game;
-        this.statusPublisher = statusPublisher;
+            justification = "The JavaFX view intentionally keeps the Spring-owned desktop API client.")
+    public GameView(DesktopApiClient desktopApiClient) {
+        this.desktopApiClient = desktopApiClient;
 
         setPrefSize(1280, 720);
         setStyle("-fx-background-color: #111923;");
@@ -82,10 +82,12 @@ public final class GameView extends StackPane {
 
         configureLobby();
         configureHud();
+        configureConnectionStatus();
         configureUpgradePanel();
         configureResultPanel();
 
-        StackPane overlay = new StackPane(lobbyPanel, hudPanel, upgradePanel, resultPanel);
+        StackPane overlay = new StackPane(
+                lobbyPanel, hudPanel, upgradePanel, resultPanel, connectionLabel);
         overlay.setPickOnBounds(false);
         getChildren().addAll(canvas, overlay);
 
@@ -96,7 +98,8 @@ public final class GameView extends StackPane {
             }
         };
 
-        publishAndRefresh();
+        desktopApiClient.setStateListener(this::refreshOnJavaFxThread);
+        refreshView();
     }
 
     public void installInputHandlers(Scene scene) {
@@ -112,6 +115,7 @@ public final class GameView extends StackPane {
 
     public void stopLoop() {
         gameLoop.stop();
+        desktopApiClient.setStateListener(() -> { });
         clearInput();
     }
 
@@ -120,7 +124,7 @@ public final class GameView extends StackPane {
         down = false;
         left = false;
         right = false;
-        game.setInput(InputState.idle());
+        desktopApiClient.setInput(InputState.idle());
     }
 
     private void configureLobby() {
@@ -158,6 +162,15 @@ public final class GameView extends StackPane {
         StackPane.setMargin(hudPanel, new Insets(18));
     }
 
+    private void configureConnectionStatus() {
+        connectionLabel.setPadding(new Insets(8, 12, 8, 12));
+        connectionLabel.setWrapText(true);
+        connectionLabel.setMaxWidth(460);
+        connectionLabel.setMouseTransparent(true);
+        StackPane.setAlignment(connectionLabel, Pos.TOP_RIGHT);
+        StackPane.setMargin(connectionLabel, new Insets(18));
+    }
+
     private void configureUpgradePanel() {
         upgradePanel.setAlignment(Pos.CENTER);
         upgradePanel.setPadding(new Insets(28));
@@ -185,41 +198,66 @@ public final class GameView extends StackPane {
     private void startNewGame() {
         clearInput();
         displayedChoices = List.of();
-        game.startNewGame();
+        desktopApiClient.startNewGame();
         accumulatorSeconds = 0.0;
-        publishAndRefresh();
+        refreshView();
     }
 
     private void updateFrame(long now) {
         if (previousFrameNanos == 0L) {
             previousFrameNanos = now;
-            publishAndRefresh();
+            refreshView();
             return;
         }
 
         double frameSeconds = Math.min((now - previousFrameNanos) / 1_000_000_000.0, MAX_FRAME_SECONDS);
         previousFrameNanos = now;
-        accumulatorSeconds += Math.max(0.0, frameSeconds);
+        accumulatorSeconds = Math.min(
+                MAX_FRAME_SECONDS,
+                accumulatorSeconds + Math.max(0.0, frameSeconds));
 
-        int steps = 0;
-        while (accumulatorSeconds >= FIXED_STEP_SECONDS && steps < MAX_CATCH_UP_STEPS) {
-            game.setInput(new InputState(up, down, left, right));
-            game.tick(FIXED_STEP_SECONDS);
-            accumulatorSeconds -= FIXED_STEP_SECONDS;
-            steps++;
-        }
-        if (steps == MAX_CATCH_UP_STEPS) {
+        GameSnapshot snapshot = desktopApiClient.snapshot();
+        if (snapshot.phase() != GamePhase.RUNNING) {
             accumulatorSeconds = 0.0;
         }
+        if (snapshot.phase() == GamePhase.RUNNING && accumulatorSeconds >= FIXED_STEP_SECONDS) {
+            int steps = Math.min(
+                    (int) (accumulatorSeconds / FIXED_STEP_SECONDS),
+                    MAX_CATCH_UP_STEPS);
+            desktopApiClient.setInput(new InputState(up, down, left, right));
+            if (desktopApiClient.tick(FIXED_STEP_SECONDS, steps)) {
+                accumulatorSeconds -= steps * FIXED_STEP_SECONDS;
+            }
+        }
 
-        publishAndRefresh();
+        refreshView();
     }
 
-    private void publishAndRefresh() {
-        GameSnapshot snapshot = game.snapshot();
-        statusPublisher.accept(snapshot);
+    private void refreshView() {
+        GameSnapshot snapshot = desktopApiClient.snapshot();
         render(snapshot);
         updateInterface(snapshot);
+        updateConnectionStatus(desktopApiClient.status());
+    }
+
+    private void refreshOnJavaFxThread() {
+        if (Platform.isFxApplicationThread()) {
+            refreshView();
+        } else {
+            Platform.runLater(this::refreshView);
+        }
+    }
+
+    private void updateConnectionStatus(DesktopApiStatus apiStatus) {
+        boolean online = apiStatus.state() == DesktopApiStatus.State.ONLINE;
+        connectionLabel.setVisible(!online);
+        connectionLabel.setManaged(!online);
+        connectionLabel.setText(apiStatus.message());
+        connectionLabel.setStyle(apiStatus.state() == DesktopApiStatus.State.OFFLINE
+                ? "-fx-background-color: rgba(116, 30, 36, 0.94); -fx-text-fill: #fff0f0;"
+                        + "-fx-background-radius: 8; -fx-font-size: 14px;"
+                : "-fx-background-color: rgba(37, 54, 74, 0.94); -fx-text-fill: #eef4ff;"
+                        + "-fx-background-radius: 8; -fx-font-size: 14px;");
     }
 
     private void updateInterface(GameSnapshot snapshot) {
@@ -272,8 +310,8 @@ public final class GameView extends StackPane {
                     + "-fx-font-size: 15px; -fx-background-radius: 8; -fx-border-color: #596f88;"
                     + "-fx-border-radius: 8; -fx-padding: 10 16 10 16;");
             button.setOnAction(ignored -> {
-                game.chooseUpgrade(choice);
-                publishAndRefresh();
+                desktopApiClient.chooseUpgrade(choice);
+                refreshView();
             });
             upgradePanel.getChildren().add(button);
         }

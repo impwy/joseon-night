@@ -4,17 +4,33 @@ plugins {
     id 'org.openjfx.javafxplugin'
 }
 
+sourceSets {
+    contractTest {
+        java.srcDir 'src/contractTest/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += output + compileClasspath + sourceSets.main.output
+    }
+}
+
+configurations {
+    contractTestImplementation.extendsFrom testImplementation
+    contractTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
 dependencies {
-    implementation project(':game-core')
     implementation enforcedPlatform("org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}")
     implementation platform("com.linecorp.armeria:armeria-bom:${rootProject.ext.armeriaVersion}")
     implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'com.linecorp.armeria:armeria-spring-boot3-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-json'
+    implementation 'com.linecorp.armeria:armeria'
     compileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    contractTestImplementation project(':game-core')
+    contractTestRuntimeOnly 'com.h2database:h2'
 }
 
 javafx {
@@ -23,13 +39,29 @@ javafx {
 }
 
 application {
-    mainClass = 'kr.vamsur.adapter.configuration.DesktopLauncher'
+    mainClass = 'kr.vamsur.desktop.DesktopApplication'
 }
 
 springBoot {
-    mainClass = 'kr.vamsur.adapter.configuration.DesktopLauncher'
+    mainClass = 'kr.vamsur.desktop.DesktopApplication'
 }
 
-tasks.named('bootJar') {
-    enabled = false
+tasks.named('run') {
+    workingDir = rootProject.projectDir
+}
+
+tasks.named('bootRun') {
+    workingDir = rootProject.projectDir
+}
+
+tasks.register('contractTest', Test) {
+    description = 'Runs the real game-core to desktop Armeria contract test.'
+    group = 'verification'
+    testClassesDirs = sourceSets.contractTest.output.classesDirs
+    classpath = sourceSets.contractTest.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('contractTest')
 }

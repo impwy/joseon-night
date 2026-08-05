@@ -3,20 +3,20 @@ package kr.vamsur.application.gameplay;
 import java.util.Objects;
 import kr.vamsur.application.gameplay.provided.EntitySnapshot;
 import kr.vamsur.application.gameplay.provided.GameSnapshot;
-import kr.vamsur.application.gameplay.provided.GameUseCase;
-import kr.vamsur.application.shared.ApplicationService;
+import kr.vamsur.application.gameplay.provided.GameRunner;
 import kr.vamsur.domain.gameplay.EntityState;
 import kr.vamsur.domain.gameplay.GameRules;
 import kr.vamsur.domain.gameplay.GameSession;
 import kr.vamsur.domain.gameplay.GameState;
 import kr.vamsur.domain.gameplay.InputState;
 import kr.vamsur.domain.gameplay.UpgradeType;
+import kr.vamsur.support.stereotype.ValidatedApplicationService;
 
 /**
  * Thread-safe application boundary around the mutable session model.
  */
-@ApplicationService
-public final class GameService implements GameUseCase {
+@ValidatedApplicationService
+public final class GameService implements GameRunner {
 
     private static final long DEFAULT_SEED = 2_026_08_05L;
 
@@ -25,6 +25,10 @@ public final class GameService implements GameUseCase {
     private final Object sessionLock = new Object();
     private GameSession session;
 
+    public GameService() {
+        this(GameRules.standard(), DEFAULT_SEED);
+    }
+
     public GameService(GameRules rules, long seed) {
         this.rules = Objects.requireNonNull(rules, "rules");
         this.seed = seed;
@@ -32,7 +36,7 @@ public final class GameService implements GameUseCase {
     }
 
     public static GameService defaultGame() {
-        return new GameService(GameRules.standard(), DEFAULT_SEED);
+        return new GameService();
     }
 
     @Override
