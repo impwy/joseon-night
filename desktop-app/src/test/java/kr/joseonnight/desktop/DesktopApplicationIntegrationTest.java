@@ -45,6 +45,7 @@ import kr.joseonnight.desktop.gameplay.DesktopApiStatus;
 import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.gameplay.InputState;
 import kr.joseonnight.desktop.settings.AudioSettings;
+import kr.joseonnight.desktop.settings.TargetFps;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -126,11 +127,14 @@ class DesktopApplicationIntegrationTest {
             assertThat(members.loadBootstrap("jwt-token").get(2, java.util.concurrent.TimeUnit.SECONDS)
                     .nickname()).isEqualTo("달빛사냥꾼");
             assertThat(members.loadSettings("jwt-token").get(2, java.util.concurrent.TimeUnit.SECONDS))
-                    .isEqualTo(new AudioSettings(false, 70));
+                    .isEqualTo(new AudioSettings(false, 70, 65, TargetFps.FPS_60));
 
-            members.saveSettingsDebounced("jwt-token", new AudioSettings(false, 10));
-            members.saveSettingsDebounced("jwt-token", new AudioSettings(true, 40));
-            members.saveSettingsDebounced("jwt-token", new AudioSettings(false, 95));
+            members.saveSettingsDebounced(
+                    "jwt-token", new AudioSettings(false, 10, 20, TargetFps.FPS_30));
+            members.saveSettingsDebounced(
+                    "jwt-token", new AudioSettings(true, 40, 50, TargetFps.AUTO));
+            members.saveSettingsDebounced(
+                    "jwt-token", new AudioSettings(false, 95, 85, TargetFps.FPS_60));
 
             await(() -> backend.countRestRequests("PATCH", "/api/v1/members/me/settings") == 1);
             RecordedRequest saved = backend.requests.stream()
@@ -141,7 +145,9 @@ class DesktopApplicationIntegrationTest {
             assertThat(saved.authorization()).isEqualTo("Bearer jwt-token");
             assertThat(saved.body())
                     .contains("\"muted\":false")
-                    .contains("\"masterVolume\":95");
+                    .contains("\"musicVolume\":95")
+                    .contains("\"effectsVolume\":85")
+                    .contains("\"targetFps\":\"FPS_60\"");
         }
     }
 
@@ -484,7 +490,9 @@ class DesktopApplicationIntegrationTest {
                         """);
             }
             if (path.equals("/api/v1/members/me/settings") && request.method().name().equals("GET")) {
-                return json(HttpStatus.OK, "{\"muted\":false,\"masterVolume\":70}");
+                return json(HttpStatus.OK,
+                        "{\"muted\":false,\"musicVolume\":70,\"effectsVolume\":65,"
+                                + "\"targetFps\":\"FPS_60\"}");
             }
             if (path.equals("/api/v1/members/me/settings") && request.method().name().equals("PATCH")) {
                 return json(HttpStatus.OK, request.contentUtf8());

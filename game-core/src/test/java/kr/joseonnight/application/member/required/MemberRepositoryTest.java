@@ -12,7 +12,10 @@ import kr.joseonnight.domain.member.MemberCharacter;
 import kr.joseonnight.domain.member.OAuthIdentity;
 import kr.joseonnight.domain.member.OAuthProvider;
 import kr.joseonnight.domain.membersettings.MemberSettings;
+import kr.joseonnight.domain.membersettings.TargetFps;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import kr.joseonnight.support.test.RepositoryTest;
 
@@ -54,8 +57,41 @@ class MemberRepositoryTest {
         assertThat(identity.getMemberId()).isEqualTo(member.getId());
         assertThat(identity.getSubjectHmac()).isEqualTo(SUBJECT_HMAC);
         assertThat(settings.getNickname()).isEqualTo("야행꾼");
-        assertThat(settings.getMasterVolume()).isEqualTo(70);
         assertThat(settings.isMuted()).isFalse();
+        assertThat(settings.getMusicVolume()).isEqualTo(70);
+        assertThat(settings.getEffectsVolume()).isEqualTo(70);
+        assertThat(settings.getTargetFps()).isEqualTo(TargetFps.FPS_60);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"music_volume", "effects_volume"})
+    void enforcesVolumeCheckConstraints(String columnName) {
+        Member member = memberRepository.save(Member.register(NOW));
+        settingsRepository.save(MemberSettings.create(member.getId(), "야행꾼", NOW));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThatThrownBy(() -> entityManager.createNativeQuery(
+                        "UPDATE member_settings SET " + columnName + " = 101 WHERE member_id = :memberId"
+                )
+                .setParameter("memberId", member.getId())
+                .executeUpdate())
+                .hasRootCauseInstanceOf(SQLException.class);
+    }
+
+    @Test
+    void enforcesTargetFpsCheckConstraint() {
+        Member member = memberRepository.save(Member.register(NOW));
+        settingsRepository.save(MemberSettings.create(member.getId(), "야행꾼", NOW));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThatThrownBy(() -> entityManager.createNativeQuery(
+                        "UPDATE member_settings SET target_fps = 'FPS_120' WHERE member_id = :memberId"
+                )
+                .setParameter("memberId", member.getId())
+                .executeUpdate())
+                .hasRootCauseInstanceOf(SQLException.class);
     }
 
     @Test

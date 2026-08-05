@@ -2,6 +2,8 @@ package kr.joseonnight.domain.membersettings;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
@@ -13,6 +15,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 public class MemberSettings extends AbstractEntity {
 
     private static final int DEFAULT_VOLUME = 70;
+    private static final TargetFps DEFAULT_TARGET_FPS = TargetFps.FPS_60;
 
     @Column(name = "member_id", nullable = false, unique = true)
     private Long memberId;
@@ -20,11 +23,18 @@ public class MemberSettings extends AbstractEntity {
     @Column(nullable = false, unique = true, length = 20)
     private String nickname;
 
-    @Column(name = "master_volume", nullable = false)
-    private int masterVolume;
-
     @Column(nullable = false)
     private boolean muted;
+
+    @Column(name = "music_volume", nullable = false)
+    private int musicVolume;
+
+    @Column(name = "effects_volume", nullable = false)
+    private int effectsVolume;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_fps", nullable = false, length = 20)
+    private TargetFps targetFps;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
@@ -36,7 +46,9 @@ public class MemberSettings extends AbstractEntity {
     private MemberSettings(Long memberId, String nickname, Instant now) {
         this.memberId = Objects.requireNonNull(memberId, "memberId");
         this.nickname = validateNickname(nickname);
-        masterVolume = DEFAULT_VOLUME;
+        musicVolume = DEFAULT_VOLUME;
+        effectsVolume = DEFAULT_VOLUME;
+        targetFps = DEFAULT_TARGET_FPS;
         updatedAt = Objects.requireNonNull(now, "now");
     }
 
@@ -44,10 +56,22 @@ public class MemberSettings extends AbstractEntity {
         return new MemberSettings(memberId, nickname, now);
     }
 
-    public void updateAudio(int masterVolume, boolean muted, Instant now) {
-        this.masterVolume = validateVolume(masterVolume);
+    public void updatePreferences(
+            boolean muted,
+            int musicVolume,
+            int effectsVolume,
+            TargetFps targetFps,
+            Instant now
+    ) {
+        int validatedMusicVolume = validateVolume(musicVolume);
+        int validatedEffectsVolume = validateVolume(effectsVolume);
+        TargetFps validatedTargetFps = Objects.requireNonNull(targetFps, "targetFps");
+        Instant validatedNow = Objects.requireNonNull(now, "now");
         this.muted = muted;
-        updatedAt = Objects.requireNonNull(now, "now");
+        this.musicVolume = validatedMusicVolume;
+        this.effectsVolume = validatedEffectsVolume;
+        this.targetFps = validatedTargetFps;
+        updatedAt = validatedNow;
     }
 
     public Long getMemberId() {
@@ -58,12 +82,20 @@ public class MemberSettings extends AbstractEntity {
         return nickname;
     }
 
-    public int getMasterVolume() {
-        return masterVolume;
-    }
-
     public boolean isMuted() {
         return muted;
+    }
+
+    public int getMusicVolume() {
+        return musicVolume;
+    }
+
+    public int getEffectsVolume() {
+        return effectsVolume;
+    }
+
+    public TargetFps getTargetFps() {
+        return targetFps;
     }
 
     public Instant getUpdatedAt() {

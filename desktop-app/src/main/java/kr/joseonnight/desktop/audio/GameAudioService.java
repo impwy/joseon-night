@@ -40,7 +40,7 @@ public final class GameAudioService implements AutoCloseable {
         dispatch(() -> {
             settings = Objects.requireNonNull(newSettings, "newSettings");
             if (musicPlayer != null) {
-                musicPlayer.setVolume(settings.effectiveVolume());
+                musicPlayer.setVolume(settings.effectiveMusicVolume());
             }
         });
     }
@@ -87,7 +87,7 @@ public final class GameAudioService implements AutoCloseable {
         try {
             MediaPlayer player = new MediaPlayer(new Media(resource.toExternalForm()));
             player.setCycleCount(MediaPlayer.INDEFINITE);
-            player.setVolume(settings.effectiveVolume());
+            player.setVolume(settings.effectiveMusicVolume());
             player.play();
             musicPlayer = player;
         } catch (MediaException ignored) {
@@ -96,7 +96,7 @@ public final class GameAudioService implements AutoCloseable {
     }
 
     private void playEffectOnJavaFxThread(String eventType) {
-        if (eventType == null || eventType.isBlank() || settings.effectiveVolume() <= 0.0) {
+        if (eventType == null || eventType.isBlank() || settings.effectiveEffectsVolume() <= 0.0) {
             return;
         }
         String normalized = eventType.toUpperCase(Locale.ROOT);
@@ -106,7 +106,7 @@ public final class GameAudioService implements AutoCloseable {
         }
         AudioClip clip = effectCache.computeIfAbsent(normalized, ignored -> loadClip(path));
         if (clip != null) {
-            clip.play(settings.effectiveVolume());
+            clip.play(settings.effectiveEffectsVolume());
         }
     }
 

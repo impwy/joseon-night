@@ -18,6 +18,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 import kr.joseonnight.desktop.audio.AudioScene;
 import kr.joseonnight.desktop.audio.GameAudioService;
 import kr.joseonnight.desktop.authentication.AuthPhase;
@@ -29,6 +30,7 @@ import kr.joseonnight.desktop.client.MemberApiClient;
 import kr.joseonnight.desktop.gameplay.DesktopApiStatus;
 import kr.joseonnight.desktop.member.MemberBootstrap;
 import kr.joseonnight.desktop.settings.AudioSettings;
+import kr.joseonnight.desktop.settings.TargetFps;
 
 /** Owns the Login → Lobby → Settings/Combat root-screen transitions. */
 public final class DesktopRootView extends StackPane implements AutoCloseable {
@@ -67,8 +69,11 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private final Label welcomeLabel = bodyLabel();
     private final ComboBox<String> characterSelector = new ComboBox<>();
     private final CheckBox mutedCheckBox = new CheckBox("모든 소리 끄기");
-    private final Slider volumeSlider = new Slider(0, 100, 80);
-    private final Label volumeLabel = bodyLabel();
+    private final Slider musicVolumeSlider = volumeSlider();
+    private final Slider effectsVolumeSlider = volumeSlider();
+    private final Label musicVolumeLabel = bodyLabel();
+    private final Label effectsVolumeLabel = bodyLabel();
+    private final ComboBox<TargetFps> targetFpsSelector = new ComboBox<>();
     private final Label settingsMessage = bodyLabel();
 
     private RootScreen screen = RootScreen.LOGIN;
@@ -183,19 +188,44 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     private void configureSettingsPane() {
-        Label title = title("소리 설정");
+        settingsPane.setMaxSize(620, 620);
+        Label title = title("환경설정");
         mutedCheckBox.setStyle(TEXT_STYLE);
         mutedCheckBox.setOnAction(ignored -> updateAudioSettings());
-        volumeSlider.setShowTickMarks(true);
-        volumeSlider.setMajorTickUnit(25);
-        volumeSlider.setBlockIncrement(5);
-        volumeSlider.setMaxWidth(420);
-        volumeSlider.valueProperty().addListener((ignored, oldValue, newValue) -> updateAudioSettings());
+        musicVolumeSlider.valueProperty().addListener((ignored, oldValue, newValue) -> updateAudioSettings());
+        effectsVolumeSlider.valueProperty().addListener((ignored, oldValue, newValue) -> updateAudioSettings());
+        targetFpsSelector.getItems().setAll(TargetFps.values());
+        targetFpsSelector.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(TargetFps value) {
+                return value == null ? "" : value.displayName();
+            }
+
+            @Override
+            public TargetFps fromString(String value) {
+                return TargetFps.valueOf(value);
+            }
+        });
+        targetFpsSelector.setMaxWidth(420);
+        targetFpsSelector.setPrefWidth(420);
+        targetFpsSelector.setStyle("-fx-font-size: 15px;");
+        targetFpsSelector.setOnAction(ignored -> updateAudioSettings());
+        Label frameLabel = bodyLabel();
+        frameLabel.setText("화면 프레임");
         settingsMessage.setStyle("-fx-font-size: 14px; -fx-text-fill: #afbed0;");
         Button backButton = primaryButton("로비로 돌아가기");
         backButton.setOnAction(ignored -> showScreen(RootScreen.LOBBY));
         settingsPane.getChildren().addAll(
-                title, mutedCheckBox, volumeLabel, volumeSlider, settingsMessage, backButton);
+                title,
+                mutedCheckBox,
+                musicVolumeLabel,
+                musicVolumeSlider,
+                effectsVolumeLabel,
+                effectsVolumeSlider,
+                frameLabel,
+                targetFpsSelector,
+                settingsMessage,
+                backButton);
         applyAudioSettingsToControls();
     }
 
@@ -263,6 +293,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
                     }
                     applyAudioSettingsToControls();
                     audioService.applySettings(audioSettings);
+                    gameView.setTargetFps(audioSettings.targetFps());
                 }));
     }
 
@@ -332,10 +363,17 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         if (applyingSettings) {
             return;
         }
-        int volume = (int) Math.round(volumeSlider.getValue());
-        audioSettings = new AudioSettings(mutedCheckBox.isSelected(), volume);
-        volumeLabel.setText("전체 음량  %d".formatted(volume));
+        int musicVolume = (int) Math.round(musicVolumeSlider.getValue());
+        int effectsVolume = (int) Math.round(effectsVolumeSlider.getValue());
+        TargetFps targetFps = targetFpsSelector.getValue() == null
+                ? TargetFps.FPS_60
+                : targetFpsSelector.getValue();
+        audioSettings = new AudioSettings(
+                mutedCheckBox.isSelected(), musicVolume, effectsVolume, targetFps);
+        musicVolumeLabel.setText("배경음악 음량  %d".formatted(musicVolume));
+        effectsVolumeLabel.setText("효과음 음량  %d".formatted(effectsVolume));
         audioService.applySettings(audioSettings);
+        gameView.setTargetFps(targetFps);
         AuthSession session = authApiClient.state().session();
         if (session != null) {
             settingsMessage.setText("변경 후 0.5초 뒤 자동 저장됩니다.");
@@ -347,8 +385,11 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         applyingSettings = true;
         try {
             mutedCheckBox.setSelected(audioSettings.muted());
-            volumeSlider.setValue(audioSettings.masterVolume());
-            volumeLabel.setText("전체 음량  %d".formatted(audioSettings.masterVolume()));
+            musicVolumeSlider.setValue(audioSettings.musicVolume());
+            effectsVolumeSlider.setValue(audioSettings.effectsVolume());
+            targetFpsSelector.setValue(audioSettings.targetFps());
+            musicVolumeLabel.setText("배경음악 음량  %d".formatted(audioSettings.musicVolume()));
+            effectsVolumeLabel.setText("효과음 음량  %d".formatted(audioSettings.effectsVolume()));
         } finally {
             applyingSettings = false;
         }
@@ -457,6 +498,15 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
                 + "-fx-font-size: 15px; -fx-background-radius: 8; -fx-padding: 9 16 9 16;");
         button.setMinWidth(220);
         return button;
+    }
+
+    private static Slider volumeSlider() {
+        Slider slider = new Slider(0, 100, 70);
+        slider.setShowTickMarks(true);
+        slider.setMajorTickUnit(25);
+        slider.setBlockIncrement(5);
+        slider.setMaxWidth(420);
+        return slider;
     }
 
     private static void runOnJavaFxThread(Runnable operation) {

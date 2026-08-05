@@ -3,6 +3,7 @@ package kr.joseonnight.adapter.webapi.memberapi;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import java.util.HashSet;
 import java.util.List;
 import kr.joseonnight.adapter.security.jwt.MemberPrincipal;
@@ -16,6 +17,7 @@ import kr.joseonnight.application.membersettings.provided.MemberSettingsModifyIn
 import kr.joseonnight.application.membersettings.provided.MemberSettingsView;
 import kr.joseonnight.application.playrecord.provided.PlayRecordFinder;
 import kr.joseonnight.application.playrecord.provided.PlayRecordView;
+import kr.joseonnight.domain.membersettings.TargetFps;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -81,7 +83,12 @@ public class MemberApi {
     ) {
         return SettingsResponse.from(settingsModifier.modify(
                 principal.memberId(),
-                new MemberSettingsModifyInfo(request.muted(), request.masterVolume())
+                new MemberSettingsModifyInfo(
+                        request.muted(),
+                        request.musicVolume(),
+                        request.effectsVolume(),
+                        request.targetFps()
+                )
         ));
     }
 
@@ -112,14 +119,26 @@ public class MemberApi {
     }
 
     public record SettingsRequest(
-            boolean muted,
-            @Min(0) @Max(100) int masterVolume
+            @NotNull Boolean muted,
+            @NotNull @Min(0) @Max(100) Integer musicVolume,
+            @NotNull @Min(0) @Max(100) Integer effectsVolume,
+            @NotNull TargetFps targetFps
     ) {
     }
 
-    public record SettingsResponse(boolean muted, int masterVolume) {
+    public record SettingsResponse(
+            boolean muted,
+            int musicVolume,
+            int effectsVolume,
+            TargetFps targetFps
+    ) {
         static SettingsResponse from(MemberSettingsView settings) {
-            return new SettingsResponse(settings.muted(), settings.masterVolume());
+            return new SettingsResponse(
+                    settings.muted(),
+                    settings.musicVolume(),
+                    settings.effectsVolume(),
+                    settings.targetFps()
+            );
         }
     }
 

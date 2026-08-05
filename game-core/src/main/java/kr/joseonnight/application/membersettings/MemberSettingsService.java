@@ -44,9 +44,11 @@ public final class MemberSettingsService
     @Transactional
     public MemberSettingsView modify(Long memberId, MemberSettingsModifyInfo modifyInfo) {
         MemberSettings settings = findEntity(memberId);
-        settings.updateAudio(
-                modifyInfo.masterVolume(),
+        settings.updatePreferences(
                 modifyInfo.muted(),
+                modifyInfo.musicVolume(),
+                modifyInfo.effectsVolume(),
+                modifyInfo.targetFps(),
                 Instant.now(clock)
         );
         return MemberSettingsView.from(settings);

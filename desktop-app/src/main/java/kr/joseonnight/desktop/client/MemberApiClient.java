@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import kr.joseonnight.desktop.member.MemberBootstrap;
 import kr.joseonnight.desktop.settings.AudioSettings;
+import kr.joseonnight.desktop.settings.TargetFps;
 import tools.jackson.databind.ObjectMapper;
 
 /** Authenticated member/bootstrap/settings REST client. */
@@ -80,7 +81,11 @@ public final class MemberApiClient implements AutoCloseable {
             AggregatedHttpResponse response = request(HttpMethod.GET, SETTINGS_PATH, null, token);
             requireSuccess(response);
             SettingsResponse body = objectMapper.readValue(response.contentUtf8(), SettingsResponse.class);
-            return new AudioSettings(body.muted(), body.masterVolume());
+            return new AudioSettings(
+                    body.muted(),
+                    body.resolvedMusicVolume(),
+                    body.resolvedEffectsVolume(),
+                    body.resolvedTargetFps());
         });
     }
 
@@ -123,7 +128,11 @@ public final class MemberApiClient implements AutoCloseable {
             AggregatedHttpResponse response = request(
                     HttpMethod.PATCH,
                     SETTINGS_PATH,
-                    new SettingsRequest(settings.muted(), settings.masterVolume()),
+                    new SettingsRequest(
+                            settings.muted(),
+                            settings.musicVolume(),
+                            settings.effectsVolume(),
+                            settings.targetFps()),
                     accessToken);
             requireSuccess(response);
         } catch (Exception exception) {
@@ -220,10 +229,41 @@ public final class MemberApiClient implements AutoCloseable {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record SettingsResponse(boolean muted, int masterVolume) {
+    private record SkillResponse(String id, String displayName, String description) {
     }
 
-    private record SettingsRequest(boolean muted, int masterVolume) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record SettingsResponse(
+            boolean muted,
+            Integer musicVolume,
+            Integer effectsVolume,
+            String targetFps,
+            Integer masterVolume) {
+        private int resolvedMusicVolume() {
+            return musicVolume == null ? legacyOrDefaultVolume() : musicVolume;
+        }
+
+        private int resolvedEffectsVolume() {
+            return effectsVolume == null ? legacyOrDefaultVolume() : effectsVolume;
+        }
+
+        private int legacyOrDefaultVolume() {
+            return masterVolume == null ? AudioSettings.defaults().musicVolume() : masterVolume;
+        }
+
+        private TargetFps resolvedTargetFps() {
+            if (targetFps == null || targetFps.isBlank()) {
+                return TargetFps.FPS_60;
+            }
+            return TargetFps.valueOf(targetFps);
+        }
+    }
+
+    private record SettingsRequest(
+            boolean muted,
+            int musicVolume,
+            int effectsVolume,
+            TargetFps targetFps) {
     }
 
     private static final class MemberApiException extends IOException {

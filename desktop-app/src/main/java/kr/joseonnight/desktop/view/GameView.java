@@ -29,6 +29,7 @@ import kr.joseonnight.desktop.gameplay.InputState;
 import kr.joseonnight.desktop.gameplay.ItemSlotSnapshot;
 import kr.joseonnight.desktop.gameplay.RewardOptionSnapshot;
 import kr.joseonnight.desktop.gameplay.UpgradeType;
+import kr.joseonnight.desktop.settings.TargetFps;
 
 /**
  * Canvas combat renderer with JavaFX controls layered above it.
@@ -70,6 +71,7 @@ public final class GameView extends StackPane {
     private final Label resultTitle = new Label();
     private final Label resultSummary = new Label();
     private final AnimationTimer gameLoop;
+    private final FrameRateLimiter frameRateLimiter = new FrameRateLimiter(TargetFps.FPS_60);
 
     private List<String> displayedOptionIds = List.of();
     private boolean up;
@@ -130,6 +132,7 @@ public final class GameView extends StackPane {
     public void startLoop() {
         previousFrameNanos = 0L;
         accumulatorSeconds = 0.0;
+        frameRateLimiter.reset();
         gameLoop.start();
     }
 
@@ -139,7 +142,13 @@ public final class GameView extends StackPane {
     }
 
     public void refreshFromClient() {
-        refreshView();
+        GameSnapshot snapshot = desktopApiClient.snapshot();
+        updateInterface(snapshot);
+        updateConnectionStatus(desktopApiClient.status());
+    }
+
+    public void setTargetFps(TargetFps targetFps) {
+        frameRateLimiter.setTargetFps(targetFps);
     }
 
     public void clearInput() {
@@ -247,7 +256,9 @@ public final class GameView extends StackPane {
     private void updateFrame(long now) {
         if (previousFrameNanos == 0L) {
             previousFrameNanos = now;
-            refreshView();
+            if (frameRateLimiter.shouldRender(now)) {
+                refreshView();
+            }
             return;
         }
 
@@ -274,7 +285,9 @@ public final class GameView extends StackPane {
             accumulatorSeconds -= steps * FIXED_STEP_SECONDS;
         }
 
-        refreshView();
+        if (frameRateLimiter.shouldRender(now)) {
+            refreshView();
+        }
     }
 
     private void refreshView() {
