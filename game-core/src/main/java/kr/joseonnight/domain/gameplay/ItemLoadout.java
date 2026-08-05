@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import org.springframework.util.Assert;
 
 /**
  * Owns the five-slot item and evolution invariants for one run.
@@ -125,11 +126,15 @@ final class ItemLoadout {
     }
 
     Set<ItemType> equippedItems() {
-        return Set.copyOf(items.keySet());
+        EnumSet<ItemType> orderedItems = EnumSet.noneOf(ItemType.class);
+        orderedItems.addAll(items.keySet());
+        return Collections.unmodifiableSet(orderedItems);
     }
 
     Set<EvolutionType> equippedEvolutions() {
-        return Set.copyOf(evolutions);
+        EnumSet<EvolutionType> orderedEvolutions = EnumSet.noneOf(EvolutionType.class);
+        orderedEvolutions.addAll(evolutions);
+        return Collections.unmodifiableSet(orderedEvolutions);
     }
 
     private List<RewardOption> yellowCandidates() {
@@ -158,25 +163,21 @@ final class ItemLoadout {
     private void applyItem(ItemType item) {
         Integer currentLevel = items.get(item);
         if (currentLevel == null) {
-            if (CHARACTER_STARTING_ITEMS.contains(item)) {
-                throw new IllegalArgumentException("Another character's starting item cannot be acquired");
-            }
-            if (occupiedSlots() >= MAX_SLOTS) {
-                throw new IllegalStateException("All item slots are occupied");
-            }
+            Assert.isTrue(
+                    !CHARACTER_STARTING_ITEMS.contains(item),
+                    "Another character's starting item cannot be acquired"
+            );
+            Assert.state(occupiedSlots() < MAX_SLOTS, "All item slots are occupied");
             items.put(item, 1);
             return;
         }
-        if (currentLevel >= MAX_ITEM_LEVEL) {
-            throw new IllegalStateException("The item is already level five");
-        }
+        Assert.state(currentLevel < MAX_ITEM_LEVEL, "The item is already level five");
         items.put(item, currentLevel + 1);
     }
 
     private void applyEvolution(EvolutionType evolution) {
-        if (!canEvolve(evolution)) {
-            throw new IllegalStateException("Evolution requirements are not met: " + evolution.id());
-        }
+        Assert.state(canEvolve(evolution),
+                () -> "Evolution requirements are not met: " + evolution.id());
         items.remove(evolution.firstMaterial());
         items.remove(evolution.secondMaterial());
         evolutions.add(evolution);

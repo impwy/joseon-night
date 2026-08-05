@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import org.springframework.util.Assert;
 
 /**
  * Mutable aggregate for exactly one authoritative play session.
@@ -31,6 +32,8 @@ public final class GameSession {
     private static final int PURPLE_CHEST_COUNT = 2;
     private static final int MAX_PROJECTILES_PER_VOLLEY = 5;
     private static final int MAX_RECENT_SOUND_EVENTS = 64;
+    private static final int MAX_ACTIVE_LIGHTNING_STRIKES = 32;
+    private static final double LIGHTNING_VISUAL_SECONDS = 0.24;
 
     private final GameRules rules;
     private final Random random;
@@ -39,6 +42,7 @@ public final class GameSession {
     private final ItemLoadout loadout;
     private final List<Enemy> enemies = new ArrayList<>();
     private final List<Projectile> projectiles = new ArrayList<>();
+    private final List<LightningStrike> lightningStrikes = new ArrayList<>();
     private final List<SoulFlame> soulFlames = new ArrayList<>();
     private final List<WorldChest> chests = new ArrayList<>();
     private final List<SoundEvent> soundEvents = new ArrayList<>();
@@ -128,6 +132,7 @@ public final class GameSession {
             return;
         }
 
+        updateLightningStrikes(simulatedSeconds);
         fireEquippedWeapons(simulatedSeconds);
         moveProjectilesAndResolveHits(simulatedSeconds);
         attractAndCollectSoulFlames(simulatedSeconds);
@@ -142,9 +147,8 @@ public final class GameSession {
     public void chooseUpgrade(UpgradeType upgradeType) {
         Objects.requireNonNull(upgradeType, "upgradeType");
         ensurePhase(GamePhase.LEVEL_UP, "An upgrade can only be chosen during level up");
-        if (!upgradeChoices.contains(upgradeType)) {
-            throw new IllegalArgumentException("The upgrade was not offered: " + upgradeType);
-        }
+        Assert.state(upgradeChoices.contains(upgradeType),
+                () -> "The upgrade was not offered: " + upgradeType);
         applyGeneralUpgrade(upgradeType);
         completeLevelUp();
     }
@@ -191,6 +195,7 @@ public final class GameSession {
                 player.snapshot(character.id()),
                 enemies.stream().map(Enemy::snapshot).toList(),
                 projectiles.stream().map(Projectile::snapshot).toList(),
+                lightningStrikes.stream().map(LightningStrike::snapshot).toList(),
                 soulFlames.stream().map(SoulFlame::snapshot).toList(),
                 upgradeChoices,
                 loadout.itemStates(),
@@ -204,9 +209,8 @@ public final class GameSession {
     }
 
     private static void validateDelta(double deltaSeconds) {
-        if (!Double.isFinite(deltaSeconds) || deltaSeconds < 0.0) {
-            throw new IllegalArgumentException("deltaSeconds must be finite and non-negative");
-        }
+        Assert.isTrue(Double.isFinite(deltaSeconds) && deltaSeconds >= 0.0,
+                "deltaSeconds must be finite and non-negative");
     }
 
     private void movePlayer(double deltaSeconds) {
@@ -356,22 +360,26 @@ public final class GameSession {
     }
 
     private void fireEquippedWeapons(double deltaSeconds) {
-        if (enemies.isEmpty() || projectiles.size() >= rules.maxProjectiles()) {
+        if (enemies.isEmpty()) {
             reduceCooldowns(deltaSeconds);
             return;
         }
         for (ItemType item : loadout.equippedItems()) {
+            if (enemies.isEmpty()) {
+                break;
+            }
             double remaining = itemCooldowns.getOrDefault(item, 0.0) - deltaSeconds;
-            if (remaining <= 0.0) {
-                fireItem(item, loadout.itemLevel(item));
+            if (remaining <= 0.0 && fireItem(item, loadout.itemLevel(item))) {
                 remaining = itemCooldown(item);
             }
             itemCooldowns.put(item, remaining);
         }
         for (EvolutionType evolution : loadout.equippedEvolutions()) {
+            if (enemies.isEmpty()) {
+                break;
+            }
             double remaining = evolutionCooldowns.getOrDefault(evolution, 0.0) - deltaSeconds;
-            if (remaining <= 0.0) {
-                fireEvolution(evolution);
+            if (remaining <= 0.0 && fireEvolution(evolution)) {
                 remaining = Math.max(MIN_ATTACK_COOLDOWN_SECONDS, itemAttackCooldownSeconds * 0.65);
             }
             evolutionCooldowns.put(evolution, remaining);
@@ -383,37 +391,80 @@ public final class GameSession {
         evolutionCooldowns.replaceAll((ignored, remaining) -> remaining - deltaSeconds);
     }
 
-    private void fireItem(ItemType item, int itemLevel) {
+    private boolean fireItem(ItemType item, int itemLevel) {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY,
                 itemProjectileCount + (itemLevel - 1) / 2 + itemShotBonus(item));
         double damage = itemBaseDamage * itemDamageMultiplier(item) * (1.0 + 0.20 * (itemLevel - 1));
-        fireVolley(item.id(), SoundCue.forItem(item), shots, damage, itemSpreadDegrees(item));
+        if (item.attackMode() == AttackMode.LIGHTNING) {
+            return strikeWithLightning(item.id(), SoundCue.forItem(item), shots, damage);
+        }
+        return fireVolley(item.id(), SoundCue.forItem(item), shots, damage, itemSpreadDegrees(item));
     }
 
-    private void fireEvolution(EvolutionType evolution) {
+    private boolean fireEvolution(EvolutionType evolution) {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY, itemProjectileCount + 3);
-        fireVolley(
-                evolution.id(),
-                SoundCue.forEvolution(evolution),
-                shots,
-                itemBaseDamage * 3.0,
-                18.0);
+        double damage = itemBaseDamage * 3.0;
+        if (evolution.attackMode() == AttackMode.LIGHTNING) {
+            return strikeWithLightning(evolution.id(), SoundCue.forEvolution(evolution), shots, damage);
+        }
+        return fireVolley(evolution.id(), SoundCue.forEvolution(evolution), shots, damage, 18.0);
     }
 
-    private void fireVolley(
+    private boolean strikeWithLightning(
+            String kindId,
+            SoundCue soundCue,
+            int requestedStrikes,
+            double damage
+    ) {
+        List<Enemy> targets = enemies.stream()
+                .sorted(java.util.Comparator
+                        .comparingDouble((Enemy enemy) -> squaredDistance(
+                                player.x, player.y, enemy.x, enemy.y))
+                        .thenComparingLong(enemy -> enemy.id))
+                .limit(requestedStrikes)
+                .toList();
+        if (targets.isEmpty()) {
+            return false;
+        }
+        emitSound(soundCue);
+        for (Enemy target : targets) {
+            if (!enemies.contains(target)) {
+                continue;
+            }
+            if (lightningStrikes.size() == MAX_ACTIVE_LIGHTNING_STRIKES) {
+                lightningStrikes.removeFirst();
+            }
+            lightningStrikes.add(new LightningStrike(
+                    nextId(), target.x, target.y, LIGHTNING_VISUAL_SECONDS, kindId));
+            damageEnemy(target, damage);
+        }
+        return true;
+    }
+
+    private void updateLightningStrikes(double deltaSeconds) {
+        for (int index = lightningStrikes.size() - 1; index >= 0; index--) {
+            LightningStrike strike = lightningStrikes.get(index);
+            strike.remainingSeconds -= deltaSeconds;
+            if (strike.remainingSeconds <= 0.0) {
+                lightningStrikes.remove(index);
+            }
+        }
+    }
+
+    private boolean fireVolley(
             String kindId,
             SoundCue soundCue,
             int requestedShots,
             double damage,
             double spreadDegrees
     ) {
-        Enemy target = nearestEnemy();
-        double baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
         int availableCapacity = rules.maxProjectiles() - projectiles.size();
         int shots = Math.min(requestedShots, availableCapacity);
-        if (shots <= 0) {
-            return;
+        if (shots <= 0 || enemies.isEmpty()) {
+            return false;
         }
+        Enemy target = nearestEnemy();
+        double baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
         emitSound(soundCue);
         double center = (shots - 1) / 2.0;
         for (int index = 0; index < shots; index++) {
@@ -429,6 +480,7 @@ public final class GameSession {
                     Math.toDegrees(angle),
                     kindId));
         }
+        return true;
     }
 
     private double itemCooldown(ItemType item) {
@@ -497,13 +549,8 @@ public final class GameSession {
 
             Enemy hit = findHitEnemy(projectile, previousX, previousY);
             if (hit != null) {
-                hit.health -= projectile.damage;
                 projectiles.remove(projectileIndex);
-                if (hit.health <= 0.0) {
-                    enemies.remove(hit);
-                    killCount++;
-                    dropSoulFlame(hit.x, hit.y);
-                }
+                damageEnemy(hit, projectile.damage);
                 continue;
             }
 
@@ -562,6 +609,40 @@ public final class GameSession {
         if (soulFlames.size() < rules.maxSoulFlames()) {
             soulFlames.add(new SoulFlame(nextId(), x, y));
         }
+    }
+
+    private void damageEnemy(Enemy enemy, double damage) {
+        enemy.health -= damage;
+        if (enemy.health <= 0.0 && enemies.remove(enemy)) {
+            killCount++;
+            dropSoulFlame(enemy.x, enemy.y);
+        }
+    }
+
+    /** Package-scoped root operation used by deterministic domain scenarios. */
+    void equipItem(ItemType item) {
+        loadout.apply(RewardOption.item(Objects.requireNonNull(item, "item"), false, 0));
+    }
+
+    /** Package-scoped root operation used by deterministic domain scenarios. */
+    void evolve(EvolutionType evolution) {
+        loadout.apply(RewardOption.evolution(Objects.requireNonNull(evolution, "evolution")));
+    }
+
+    /** Package-scoped root operation used by deterministic domain scenarios. */
+    void spawnEnemy(double x, double y, double health) {
+        Assert.isTrue(Double.isFinite(x) && Double.isFinite(y),
+                "enemy position must be finite");
+        Assert.isTrue(Double.isFinite(health) && health > 0.0,
+                "enemy health must be positive");
+        Assert.state(enemies.size() < rules.maxEnemies(), "Maximum enemy count reached");
+        enemies.add(new Enemy(
+                nextId(),
+                x,
+                y,
+                rules.enemyRadius(),
+                currentEnemySpeed(),
+                health));
     }
 
     private void attractAndCollectSoulFlames(double deltaSeconds) {
@@ -652,9 +733,7 @@ public final class GameSession {
     }
 
     private void ensurePhase(GamePhase expected, String message) {
-        if (phase != expected) {
-            throw new IllegalStateException(message);
-        }
+        Assert.state(phase == expected, message);
     }
 
     private long nextId() {
@@ -770,6 +849,26 @@ public final class GameSession {
 
         private EntityState snapshot() {
             return new EntityState(id, x, y, SOUL_FLAME_RADIUS, 0.0, "soul-flame");
+        }
+    }
+
+    private static final class LightningStrike {
+        private final long id;
+        private final double x;
+        private final double y;
+        private final String kindId;
+        private double remainingSeconds;
+
+        private LightningStrike(long id, double x, double y, double remainingSeconds, String kindId) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.remainingSeconds = remainingSeconds;
+            this.kindId = kindId;
+        }
+
+        private LightningStrikeState snapshot() {
+            return new LightningStrikeState(id, x, y, remainingSeconds, kindId);
         }
     }
 

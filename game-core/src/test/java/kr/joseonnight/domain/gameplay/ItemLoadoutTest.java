@@ -2,6 +2,8 @@ package kr.joseonnight.domain.gameplay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -122,6 +124,65 @@ class ItemLoadoutTest {
         assertEquals(3, options.size());
         assertEquals(RewardKind.EVOLUTION, options.getFirst().kind());
         assertEquals(EvolutionType.TEN_THOUSAND_SEAL_ARRAY.id(), options.getFirst().targetId());
+    }
+
+    @Test
+    void equippedAttackSourcesAlwaysFollowEnumDeclarationOrder() {
+        ItemLoadout loadout = new ItemLoadout(CharacterType.DOKKAEBI_HUNTER);
+        equip(loadout, ItemType.SPIRIT_GOURD);
+        equip(loadout, ItemType.THUNDER_BELL);
+        equip(loadout, ItemType.RETURNING_BOOMERANG);
+        equip(loadout, ItemType.EXORCIST_SWORD);
+
+        assertIterableEquals(List.of(
+                ItemType.SEAL_TALISMAN,
+                ItemType.EXORCIST_SWORD,
+                ItemType.RETURNING_BOOMERANG,
+                ItemType.THUNDER_BELL,
+                ItemType.SPIRIT_GOURD), loadout.equippedItems());
+
+        ItemLoadout evolutionLoadout = new ItemLoadout(CharacterType.DOKKAEBI_HUNTER);
+        equip(evolutionLoadout, ItemType.EXORCIST_SWORD);
+        levelToFive(evolutionLoadout, ItemType.EXORCIST_SWORD);
+        equip(evolutionLoadout, ItemType.RETURNING_BOOMERANG);
+        levelToFive(evolutionLoadout, ItemType.RETURNING_BOOMERANG);
+        evolutionLoadout.apply(RewardOption.evolution(
+                EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES));
+        levelToFive(evolutionLoadout, ItemType.SEAL_TALISMAN);
+        equip(evolutionLoadout, ItemType.THUNDER_BELL);
+        levelToFive(evolutionLoadout, ItemType.THUNDER_BELL);
+        evolutionLoadout.apply(RewardOption.evolution(
+                EvolutionType.HEAVENLY_THUNDER_SEAL));
+
+        assertIterableEquals(List.of(
+                EvolutionType.HEAVENLY_THUNDER_SEAL,
+                EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES),
+                evolutionLoadout.equippedEvolutions());
+    }
+
+    @Test
+    void rejectsAnotherCharactersStartingItem() {
+        ItemLoadout loadout = new ItemLoadout(CharacterType.DOKKAEBI_HUNTER);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> loadout.apply(RewardOption.item(ItemType.FLAME_FAN, false, 0)));
+    }
+
+    @Test
+    void rejectsAnItemAboveLevelFiveAndAnIneligibleEvolution() {
+        ItemLoadout loadout = new ItemLoadout(CharacterType.DOKKAEBI_HUNTER);
+        levelToFive(loadout, ItemType.SEAL_TALISMAN);
+
+        assertThrows(IllegalStateException.class,
+                () -> loadout.apply(RewardOption.item(
+                        ItemType.SEAL_TALISMAN,
+                        true,
+                        ItemLoadout.MAX_ITEM_LEVEL
+                )));
+        assertThrows(IllegalStateException.class,
+                () -> loadout.apply(RewardOption.evolution(
+                        EvolutionType.TEN_THOUSAND_SEAL_ARRAY
+                )));
     }
 
     private static void equip(ItemLoadout loadout, ItemType item) {

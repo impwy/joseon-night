@@ -47,6 +47,24 @@ class DesktopCoreContractTest {
     }
 
     @Test
+    void lightningStrikeJsonShapeMatchesTheGameCoreSocketContract() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        String coreJson = objectMapper.writeValueAsString(
+                new kr.joseonnight.application.gameplay.provided.LightningStrikeSnapshot(
+                        9L, 120.5, -42.25, 0.24, "thunder-bell"));
+
+        kr.joseonnight.desktop.gameplay.LightningStrikeSnapshot desktopStrike =
+                objectMapper.readValue(
+                        coreJson,
+                        kr.joseonnight.desktop.gameplay.LightningStrikeSnapshot.class);
+
+        assertThat(desktopStrike.id()).isEqualTo(9L);
+        assertThat(desktopStrike.x()).isEqualTo(120.5);
+        assertThat(desktopStrike.y()).isEqualTo(-42.25);
+        assertThat(desktopStrike.kindId()).isEqualTo("thunder-bell");
+    }
+
+    @Test
     void actualGameCoreSnapshotDeserializesIntoTheDesktopReadModel() {
         GameService gameService = GameService.defaultGame();
         GameSessionHandle handle = gameService.startNewGame("contract-member", CharacterType.GALE_SHAMAN);
@@ -68,6 +86,7 @@ class DesktopCoreContractTest {
         assertThat(desktopSnapshot.invulnerabilityRemainingSeconds()).isZero();
         assertThat(desktopSnapshot.chests()).hasSize(5);
         assertThat(desktopSnapshot.chestIndicators()).hasSize(5);
+        assertThat(desktopSnapshot.lightningStrikes()).isEmpty();
         assertThat(desktopSnapshot.soundEvents()).isEmpty();
     }
 }

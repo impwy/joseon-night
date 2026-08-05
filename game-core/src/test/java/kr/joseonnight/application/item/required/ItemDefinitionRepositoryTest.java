@@ -64,4 +64,14 @@ class ItemDefinitionRepositoryTest {
         assertThat(firstItem.getCategory()).isEqualTo(ItemCategory.WEAPON);
         assertThat(firstItem.getConfiguration()).containsEntry("damage", 10);
     }
+
+    @Test
+    void migrationDescribesThunderBellAsADirectStrike() {
+        entityManager.flush();
+        entityManager.clear();
+
+        ItemDefinition thunderBell = itemRepository.findById("thunder-bell").orElseThrow();
+
+        assertThat(thunderBell.getDescription()).isEqualTo("가까운 적의 머리 위에 즉시 낙뢰를 내린다.");
+    }
 }

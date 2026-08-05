@@ -27,6 +27,7 @@ import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.gameplay.GameSnapshot;
 import kr.joseonnight.desktop.gameplay.InputState;
 import kr.joseonnight.desktop.gameplay.ItemSlotSnapshot;
+import kr.joseonnight.desktop.gameplay.LightningStrikeSnapshot;
 import kr.joseonnight.desktop.gameplay.RewardOptionSnapshot;
 import kr.joseonnight.desktop.gameplay.UpgradeType;
 import kr.joseonnight.desktop.settings.TargetFps;
@@ -446,6 +447,9 @@ public final class GameView extends StackPane {
         for (EntitySnapshot enemy : snapshot.enemies()) {
             drawEnemy(graphics, enemy, width, height, cameraX, cameraY);
         }
+        for (LightningStrikeSnapshot strike : snapshot.lightningStrikes()) {
+            drawLightningStrike(graphics, strike, width, height, cameraX, cameraY);
+        }
         if (player != null) {
             String playerKind = player.kindId() == null || "unknown".equals(player.kindId())
                     ? snapshot.characterId()
@@ -541,6 +545,37 @@ public final class GameView extends StackPane {
         graphics.setFill(Color.web("#ffdf73"));
         graphics.fillOval(screenX - 10, screenY - 5, 5, 5);
         graphics.fillOval(screenX + 5, screenY - 5, 5, 5);
+    }
+
+    private static void drawLightningStrike(
+            GraphicsContext graphics,
+            LightningStrikeSnapshot strike,
+            double width,
+            double height,
+            double cameraX,
+            double cameraY) {
+        double targetX = width / 2.0 + strike.x() - cameraX;
+        double targetY = height / 2.0 + strike.y() - cameraY - ACTOR_SIZE * 0.32;
+        double intensity = Math.min(1.0, strike.remainingSeconds() / 0.12);
+        double bend = ((strike.id() & 1L) == 0L ? 1.0 : -1.0) * 9.0;
+
+        graphics.save();
+        graphics.setGlobalAlpha(Math.max(0.25, intensity));
+        graphics.setLineWidth(7.0);
+        graphics.setStroke(Color.web("#7ecbff", 0.42));
+        graphics.strokePolyline(
+                new double[] {targetX + bend, targetX - bend, targetX + bend * 0.45, targetX},
+                new double[] {targetY - 118.0, targetY - 76.0, targetY - 38.0, targetY + 4.0},
+                4);
+        graphics.setLineWidth(2.5);
+        graphics.setStroke(Color.web("#f7fbff"));
+        graphics.strokePolyline(
+                new double[] {targetX + bend, targetX - bend, targetX + bend * 0.45, targetX},
+                new double[] {targetY - 118.0, targetY - 76.0, targetY - 38.0, targetY + 4.0},
+                4);
+        graphics.setFill(Color.web("#bde8ff", 0.38));
+        graphics.fillOval(targetX - 24.0, targetY - 9.0, 48.0, 18.0);
+        graphics.restore();
     }
 
     private void drawTalisman(

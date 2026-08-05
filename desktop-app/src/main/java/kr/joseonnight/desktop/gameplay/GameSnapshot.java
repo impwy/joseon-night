@@ -25,6 +25,7 @@ public record GameSnapshot(
         EntitySnapshot player,
         List<EntitySnapshot> enemies,
         List<EntitySnapshot> projectiles,
+        List<LightningStrikeSnapshot> lightningStrikes,
         List<EntitySnapshot> soulFlames,
         List<UpgradeType> upgradeChoices,
         @JsonAlias("character") String characterId,
@@ -44,6 +45,7 @@ public record GameSnapshot(
         Objects.requireNonNull(phase, "phase");
         enemies = immutableOrEmpty(enemies);
         projectiles = immutableOrEmpty(projectiles);
+        lightningStrikes = immutableOrEmpty(lightningStrikes);
         soulFlames = immutableOrEmpty(soulFlames);
         upgradeChoices = immutableOrEmpty(upgradeChoices);
         itemSlots = immutableOrEmpty(itemSlots);
@@ -80,6 +82,7 @@ public record GameSnapshot(
                 player,
                 enemies,
                 projectiles,
+                List.of(),
                 soulFlames,
                 upgradeChoices,
                 null,

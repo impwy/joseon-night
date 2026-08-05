@@ -20,6 +20,7 @@ public record GameState(
         EntityState player,
         List<EntityState> enemies,
         List<EntityState> projectiles,
+        List<LightningStrikeState> lightningStrikes,
         List<EntityState> soulFlames,
         List<UpgradeType> upgradeChoices,
         List<ItemState> items,
@@ -38,6 +39,7 @@ public record GameState(
         Objects.requireNonNull(player, "player");
         enemies = List.copyOf(Objects.requireNonNull(enemies, "enemies"));
         projectiles = List.copyOf(Objects.requireNonNull(projectiles, "projectiles"));
+        lightningStrikes = List.copyOf(Objects.requireNonNull(lightningStrikes, "lightningStrikes"));
         soulFlames = List.copyOf(Objects.requireNonNull(soulFlames, "soulFlames"));
         upgradeChoices = List.copyOf(Objects.requireNonNull(upgradeChoices, "upgradeChoices"));
         items = List.copyOf(Objects.requireNonNull(items, "items"));

@@ -29,6 +29,10 @@ public enum ItemType {
         return displayName;
     }
 
+    public AttackMode attackMode() {
+        return this == THUNDER_BELL ? AttackMode.LIGHTNING : AttackMode.PROJECTILE;
+    }
+
     public static ItemType fromId(String id) {
         return Arrays.stream(values())
                 .filter(item -> item.id.equals(id))

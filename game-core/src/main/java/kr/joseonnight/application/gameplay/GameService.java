@@ -25,6 +25,7 @@ import kr.joseonnight.application.gameplay.provided.GameSessionManager;
 import kr.joseonnight.application.gameplay.provided.GameSessionSubscription;
 import kr.joseonnight.application.gameplay.provided.GameSessionUpdate;
 import kr.joseonnight.application.gameplay.provided.GameSnapshot;
+import kr.joseonnight.application.gameplay.provided.LightningStrikeSnapshot;
 import kr.joseonnight.application.gameplay.provided.GameRunner;
 import kr.joseonnight.application.member.provided.MemberProgressionFinder;
 import kr.joseonnight.application.playrecord.provided.PlayRecordInfo;
@@ -557,6 +558,14 @@ public final class GameService implements GameRunner, GameSessionManager {
                 toSnapshot(state.player()),
                 state.enemies().stream().map(GameService::toSnapshot).toList(),
                 state.projectiles().stream().map(GameService::toSnapshot).toList(),
+                state.lightningStrikes().stream()
+                        .map(strike -> new LightningStrikeSnapshot(
+                                strike.id(),
+                                strike.x(),
+                                strike.y(),
+                                strike.remainingSeconds(),
+                                strike.kindId()))
+                        .toList(),
                 state.soulFlames().stream().map(GameService::toSnapshot).toList(),
                 state.upgradeChoices(),
                 state.items(),

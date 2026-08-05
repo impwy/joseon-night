@@ -29,6 +29,7 @@ public record GameSnapshot(
         EntitySnapshot player,
         List<EntitySnapshot> enemies,
         List<EntitySnapshot> projectiles,
+        List<LightningStrikeSnapshot> lightningStrikes,
         List<EntitySnapshot> soulFlames,
         List<UpgradeType> upgradeChoices,
         List<ItemState> items,
@@ -47,6 +48,7 @@ public record GameSnapshot(
         Objects.requireNonNull(player, "player");
         enemies = List.copyOf(Objects.requireNonNull(enemies, "enemies"));
         projectiles = List.copyOf(Objects.requireNonNull(projectiles, "projectiles"));
+        lightningStrikes = List.copyOf(Objects.requireNonNull(lightningStrikes, "lightningStrikes"));
         soulFlames = List.copyOf(Objects.requireNonNull(soulFlames, "soulFlames"));
         upgradeChoices = List.copyOf(Objects.requireNonNull(upgradeChoices, "upgradeChoices"));
         items = List.copyOf(Objects.requireNonNull(items, "items"));

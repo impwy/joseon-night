@@ -65,6 +65,14 @@ public enum EvolutionType {
         return secondMaterial;
     }
 
+    public AttackMode attackMode() {
+        return switch (this) {
+            case HEAVENLY_THUNDER_SEAL, THUNDER_FLAME_DIVINE_ORB -> AttackMode.LIGHTNING;
+            case TEN_THOUSAND_SEAL_ARRAY, INFERNO_RETURNING_WHEEL,
+                    BLUE_FLAME_SPIRIT_GOURD, LUNAR_ECLIPSE_TWIN_BLADES -> AttackMode.PROJECTILE;
+        };
+    }
+
     public static EvolutionType fromId(String id) {
         return Arrays.stream(values())
                 .filter(evolution -> evolution.id.equals(id))
