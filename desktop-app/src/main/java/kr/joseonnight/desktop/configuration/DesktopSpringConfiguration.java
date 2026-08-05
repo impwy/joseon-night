@@ -58,12 +58,10 @@ public class DesktopSpringConfiguration {
     DesktopApiClient desktopApiClient(
             WebClient desktopWebClient,
             ClientFactory desktopClientFactory,
-            ObjectMapper objectMapper,
-            @Value("${joseon-night.desktop-api.request-timeout}") Duration requestTimeout) {
+            ObjectMapper objectMapper) {
         return new DesktopApiClient(
                 desktopWebClient,
                 desktopClientFactory,
-                objectMapper,
-                requestTimeout);
+                objectMapper);
     }
 }

@@ -2,6 +2,7 @@ package kr.joseonnight.desktop.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.linecorp.armeria.client.ClientFactory;
+import com.linecorp.armeria.client.ClientRequestContext;
 import com.linecorp.armeria.client.WebClient;
 import com.linecorp.armeria.client.websocket.WebSocketClient;
 import com.linecorp.armeria.client.websocket.WebSocketSession;
@@ -15,6 +16,7 @@ import com.linecorp.armeria.common.RequestHeaders;
 import com.linecorp.armeria.common.websocket.WebSocketFrame;
 import com.linecorp.armeria.common.websocket.WebSocketFrameType;
 import com.linecorp.armeria.common.websocket.WebSocketWriter;
+import io.netty.channel.ChannelOption;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -22,10 +24,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +40,8 @@ import kr.joseonnight.desktop.gameplay.InputState;
 import kr.joseonnight.desktop.gameplay.UpgradeType;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -46,6 +52,7 @@ import tools.jackson.databind.ObjectMapper;
  * is then sent in the WebSocket {@code Authorization: Ticket ...} header and never in a URL.</p>
  */
 public final class DesktopApiClient implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DesktopApiClient.class);
     static final String SOCKET_TICKETS_PATH = "/api/v1/game/socket-tickets";
     private static final Duration RECONNECT_DELAY = Duration.ofSeconds(1);
     private static final Duration RECONNECT_WINDOW = Duration.ofSeconds(30);
@@ -53,8 +60,8 @@ public final class DesktopApiClient implements AutoCloseable {
     private final WebClient restClient;
     private final ClientFactory clientFactory;
     private final ObjectMapper objectMapper;
-    private final Duration requestTimeout;
     private final ScheduledExecutorService worker;
+    private final long handshakeTimeoutMillis;
     private final AtomicReference<GameSnapshot> latestSnapshot = new AtomicReference<>(GameSnapshot.lobby());
     private final AtomicReference<DesktopApiStatus> status =
             new AtomicReference<>(DesktopApiStatus.offline("게임을 시작하면 서버에 연결합니다."));
@@ -76,12 +83,11 @@ public final class DesktopApiClient implements AutoCloseable {
     public DesktopApiClient(
             WebClient restClient,
             ClientFactory clientFactory,
-            ObjectMapper objectMapper,
-            Duration requestTimeout) {
+            ObjectMapper objectMapper) {
         this.restClient = Objects.requireNonNull(restClient, "restClient");
         this.clientFactory = Objects.requireNonNull(clientFactory, "clientFactory");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
-        this.requestTimeout = Objects.requireNonNull(requestTimeout, "requestTimeout");
+        handshakeTimeoutMillis = resolveHandshakeTimeoutMillis(clientFactory);
         worker = Executors.newSingleThreadScheduledExecutor(task -> Thread.ofPlatform()
                 .daemon()
                 .name("desktop-game-socket")
@@ -248,14 +254,25 @@ public final class DesktopApiClient implements AutoCloseable {
                         reconnectSessionId, StandardCharsets.UTF_8);
             }
 
+            AtomicReference<ClientRequestContext> handshakeContext = new AtomicReference<>();
             WebSocketClient socketClient = WebSocketClient.builder(baseUri)
                     .factory(clientFactory)
-                    .responseTimeout(requestTimeout)
+                    .contextCustomizer(handshakeContext::set)
                     .build();
             HttpHeaders headers = HttpHeaders.of(
                     HttpHeaderNames.AUTHORIZATION,
                     "Ticket " + requireText(ticket.ticket(), "ticket"));
-            WebSocketSession session = socketClient.connect(path, headers).get();
+            CompletableFuture<WebSocketSession> handshake = socketClient.connect(path, headers);
+            WebSocketSession session;
+            try {
+                session = handshake.get(handshakeTimeoutMillis, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException exception) {
+                cancelHandshake(handshake, handshakeContext.get());
+                throw new IOException("WebSocket handshake timed out", exception);
+            } catch (InterruptedException exception) {
+                cancelHandshake(handshake, handshakeContext.get());
+                throw exception;
+            }
             if (!isCurrent(generation)) {
                 session.outbound().close();
                 return;
@@ -408,6 +425,10 @@ public final class DesktopApiClient implements AutoCloseable {
             return;
         }
         outbound = null;
+        LOGGER.warn(
+                "Game WebSocket {} failed: {}",
+                reconnectSessionId == null ? "initial connection" : "reconnection",
+                exception.getClass().getSimpleName());
         if (exception instanceof GameApiException apiException) {
             if (apiException.statusCode() == 401) {
                 updateStatus(DesktopApiStatus.authenticationExpired());
@@ -432,8 +453,15 @@ public final class DesktopApiClient implements AutoCloseable {
         }
         outbound = null;
         String reconnectSessionId = currentSessionId;
-        if (reconnectSessionId != null && isReconnectable(latestSnapshot.get())) {
-            long nextGeneration = connectionGeneration.incrementAndGet();
+        boolean reconnectable = reconnectSessionId != null && isReconnectable(latestSnapshot.get());
+        LOGGER.warn(
+                "Game WebSocket closed unexpectedly: {}",
+                cause == null ? "peer completed the stream" : cause.getClass().getSimpleName());
+        if (reconnectable) {
+            long nextGeneration = generation + 1L;
+            if (!connectionGeneration.compareAndSet(generation, nextGeneration)) {
+                return;
+            }
             long now = System.nanoTime();
             long deadline = reconnectDeadlineNanos > now
                     ? reconnectDeadlineNanos
@@ -482,6 +510,29 @@ public final class DesktopApiClient implements AutoCloseable {
 
     private static boolean isRewardChoice(GamePhase phase) {
         return phase == GamePhase.LEVEL_UP || phase == GamePhase.CHEST_REWARD;
+    }
+
+    private static long resolveHandshakeTimeoutMillis(ClientFactory clientFactory) {
+        Object timeout = clientFactory.options()
+                .channelOptions()
+                .get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+        if (timeout instanceof Number number && number.longValue() > 0L) {
+            return number.longValue();
+        }
+        throw new IllegalArgumentException("clientFactory must define a positive connect timeout");
+    }
+
+    private static void cancelHandshake(
+            CompletableFuture<WebSocketSession> handshake,
+            ClientRequestContext context
+    ) {
+        boolean cancelled = handshake.cancel(true);
+        if (context != null) {
+            context.cancel();
+        }
+        if (!cancelled) {
+            handshake.thenAccept(session -> session.outbound().close());
+        }
     }
 
     private boolean isCurrent(long generation) {

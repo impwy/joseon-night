@@ -2,6 +2,9 @@ package kr.joseonnight.desktop;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import com.linecorp.armeria.client.ClientFactory;
 import com.linecorp.armeria.client.WebClient;
 import com.linecorp.armeria.common.AggregatedHttpRequest;
@@ -17,10 +20,18 @@ import com.linecorp.armeria.common.websocket.WebSocketWriter;
 import com.linecorp.armeria.server.Server;
 import com.linecorp.armeria.server.ServiceRequestContext;
 import com.linecorp.armeria.server.websocket.WebSocketService;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -37,6 +48,7 @@ import kr.joseonnight.desktop.settings.AudioSettings;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -46,6 +58,9 @@ import tools.jackson.databind.ObjectMapper;
 class DesktopApplicationIntegrationTest {
     private static final Pattern COMMAND_SEQUENCE_PATTERN = Pattern.compile(
             "\\\"commandSequence\\\":(\\d+)");
+    private static final Duration REST_RESPONSE_TIMEOUT = Duration.ofMillis(400);
+    private static final Duration SOCKET_STABILITY_WINDOW = Duration.ofMillis(2_400);
+
     @Test
     void springDesktopContextContainsClientsButNoEmbeddedServer() {
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(DesktopApplication.class)
@@ -137,8 +152,7 @@ class DesktopApplicationIntegrationTest {
              DesktopApiClient game = new DesktopApiClient(
                      webClient(backend, factory),
                      factory,
-                     new ObjectMapper(),
-                     Duration.ofSeconds(2))) {
+                     new ObjectMapper())) {
             game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
             await(() -> game.snapshot().phase() == GamePhase.RUNNING);
 
@@ -183,14 +197,52 @@ class DesktopApplicationIntegrationTest {
     }
 
     @Test
+    void gameSocketStaysOpenBeyondRestResponseTimeoutWithoutAnotherTicket() throws Exception {
+        assertThat(SOCKET_STABILITY_WINDOW)
+                .isGreaterThanOrEqualTo(REST_RESPONSE_TIMEOUT.multipliedBy(5));
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             DesktopApiClient game = new DesktopApiClient(
+                     webClient(backend, factory),
+                     factory,
+                     new ObjectMapper())) {
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
+            await(() -> game.snapshot().phase() == GamePhase.RUNNING);
+
+            waitForSocketStability();
+
+            assertThat(game.status().state()).isEqualTo(DesktopApiStatus.State.ONLINE);
+            assertThat(backend.socketConnections.get()).isEqualTo(1);
+            assertThat(backend.ticketRequests.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void stalledWebSocketHandshakeStopsAtConnectDeadlineAndCancelsTheUpgrade() throws Exception {
+        try (MockPlatform backend = new MockPlatform(true);
+             ClientFactory factory = clientFactory(Duration.ofMillis(150));
+             DesktopApiClient game = new DesktopApiClient(
+                     webClient(backend, factory),
+                     factory,
+                     new ObjectMapper())) {
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
+
+            await(() -> game.status().state() == DesktopApiStatus.State.OFFLINE);
+            await(() -> backend.cancelledHandshakes.get() == 1);
+
+            assertThat(backend.ticketRequests.get()).isEqualTo(1);
+            assertThat(backend.socketConnections.get()).isZero();
+        }
+    }
+
+    @Test
     void reconnectsRunningGameWithSessionIdAndPreservesInputSequence() throws Exception {
         try (MockPlatform backend = new MockPlatform();
              ClientFactory factory = clientFactory();
              DesktopApiClient game = new DesktopApiClient(
                      webClient(backend, factory),
                      factory,
-                     new ObjectMapper(),
-                     Duration.ofSeconds(2))) {
+                     new ObjectMapper())) {
             game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
             await(() -> game.snapshot().phase() == GamePhase.RUNNING);
             game.setInput(new InputState(false, false, false, true));
@@ -202,14 +254,20 @@ class DesktopApplicationIntegrationTest {
             await(() -> backend.socketConnections.get() >= 2
                     && game.status().state() == DesktopApiStatus.State.ONLINE);
             await(() -> backend.maxInputSequence() > sequenceBeforeDrop);
+            await(() -> backend.countSocketInputsWith("\"right\":true") == 2);
             assertThat(backend.countRestRequests("POST", "/api/v1/game/socket-tickets"))
-                    .isGreaterThanOrEqualTo(2);
+                    .isEqualTo(2);
             assertThat(backend.reconnectSessionIds).contains("session-1");
             assertThat(backend.countSocketCommands("START_GAME")).isEqualTo(1);
 
             long sequenceAfterReconnect = backend.maxInputSequence();
             game.setInput(new InputState(true, false, false, false));
             await(() -> backend.maxInputSequence() > sequenceAfterReconnect);
+
+            waitForSocketStability();
+            assertThat(game.status().state()).isEqualTo(DesktopApiStatus.State.ONLINE);
+            assertThat(backend.socketConnections.get()).isEqualTo(2);
+            assertThat(backend.ticketRequests.get()).isEqualTo(2);
 
             int connectionsBeforeDisconnect = backend.socketConnections.get();
             game.disconnect();
@@ -218,14 +276,66 @@ class DesktopApplicationIntegrationTest {
         }
     }
 
+    @Test
+    void explicitDisconnectWinsOverAnInFlightSocketCloseHandler() throws Exception {
+        Logger clientLogger = (Logger) LoggerFactory.getLogger(DesktopApiClient.class);
+        CountDownLatch closeHandlerEntered = new CountDownLatch(1);
+        CountDownLatch continueCloseHandler = new CountDownLatch(1);
+        AppenderBase<ILoggingEvent> blockingAppender = new AppenderBase<>() {
+            @Override
+            protected void append(ILoggingEvent event) {
+                if (!event.getFormattedMessage().startsWith("Game WebSocket closed unexpectedly:")) {
+                    return;
+                }
+                closeHandlerEntered.countDown();
+                try {
+                    continueCloseHandler.await(3, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        blockingAppender.start();
+        clientLogger.addAppender(blockingAppender);
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             DesktopApiClient game = new DesktopApiClient(
+                     webClient(backend, factory),
+                     factory,
+                     new ObjectMapper())) {
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
+            await(() -> game.snapshot().phase() == GamePhase.RUNNING);
+
+            CompletableFuture<Void> socketDrop = CompletableFuture.runAsync(backend::dropGameSocket);
+            assertThat(closeHandlerEntered.await(2, TimeUnit.SECONDS)).isTrue();
+
+            game.disconnect();
+            continueCloseHandler.countDown();
+            socketDrop.get(2, TimeUnit.SECONDS);
+            Thread.sleep(1_200L);
+
+            assertThat(game.status().state()).isEqualTo(DesktopApiStatus.State.OFFLINE);
+            assertThat(backend.socketConnections.get()).isEqualTo(1);
+            assertThat(backend.ticketRequests.get()).isEqualTo(1);
+        } finally {
+            continueCloseHandler.countDown();
+            clientLogger.detachAppender(blockingAppender);
+            blockingAppender.stop();
+        }
+    }
+
     private static ClientFactory clientFactory() {
-        return ClientFactory.builder().connectTimeout(Duration.ofSeconds(1)).build();
+        return clientFactory(Duration.ofSeconds(1));
+    }
+
+    private static ClientFactory clientFactory(Duration connectTimeout) {
+        return ClientFactory.builder().connectTimeout(connectTimeout).build();
     }
 
     private static WebClient webClient(MockPlatform backend, ClientFactory factory) {
         return WebClient.builder(backend.baseUrl())
                 .factory(factory)
-                .responseTimeout(Duration.ofSeconds(2))
+                .responseTimeout(REST_RESPONSE_TIMEOUT)
                 .build();
     }
 
@@ -237,6 +347,10 @@ class DesktopApplicationIntegrationTest {
         assertThat(condition.getAsBoolean()).isTrue();
     }
 
+    private static void waitForSocketStability() throws InterruptedException {
+        Thread.sleep(SOCKET_STABILITY_WINDOW.toMillis());
+    }
+
     private static final class MockPlatform implements AutoCloseable {
         private final List<RecordedRequest> requests = new CopyOnWriteArrayList<>();
         private final List<String> socketMessages = new CopyOnWriteArrayList<>();
@@ -246,9 +360,26 @@ class DesktopApplicationIntegrationTest {
         private final AtomicInteger exchanges = new AtomicInteger();
         private final AtomicInteger socketConnections = new AtomicInteger();
         private final AtomicInteger ticketRequests = new AtomicInteger();
+        private final AtomicInteger cancelledHandshakes = new AtomicInteger();
+        private final AtomicReference<Socket> stalledHandshakeConnection = new AtomicReference<>();
+        private final ServerSocket stalledHandshakeServer;
         private final Server server;
 
         private MockPlatform() {
+            this(false);
+        }
+
+        private MockPlatform(boolean stallWebSocketHandshake) {
+            if (stallWebSocketHandshake) {
+                try {
+                    stalledHandshakeServer = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+                } catch (IOException exception) {
+                    throw new UncheckedIOException(exception);
+                }
+                Thread.ofPlatform().daemon().start(this::acceptStalledHandshake);
+            } else {
+                stalledHandshakeServer = null;
+            }
             server = Server.builder()
                     .http(0)
                     .service("/ws/game", WebSocketService.of(this::openSocket))
@@ -258,12 +389,25 @@ class DesktopApplicationIntegrationTest {
             server.start().join();
         }
 
+        private void acceptStalledHandshake() {
+            try (Socket connection = stalledHandshakeServer.accept()) {
+                stalledHandshakeConnection.set(connection);
+                connection.getInputStream().readAllBytes();
+                cancelledHandshakes.incrementAndGet();
+            } catch (IOException ignored) {
+                // Closing the fixture also releases an accept/read still in progress.
+            }
+        }
+
         private String baseUrl() {
             return "http://127.0.0.1:" + server.activeLocalPort(SessionProtocol.HTTP);
         }
 
         private String socketUrl() {
-            return "ws://127.0.0.1:" + server.activeLocalPort(SessionProtocol.HTTP) + "/ws/game";
+            int port = stalledHandshakeServer == null
+                    ? server.activeLocalPort(SessionProtocol.HTTP)
+                    : stalledHandshakeServer.getLocalPort();
+            return "ws://127.0.0.1:" + port + "/ws/game";
         }
 
         private boolean hasRestRequest(String method, String path) {
@@ -404,6 +548,21 @@ class DesktopApplicationIntegrationTest {
         @Override
         public void close() {
             socketWriters.forEach(WebSocketWriter::close);
+            Socket stalledConnection = stalledHandshakeConnection.get();
+            if (stalledConnection != null) {
+                try {
+                    stalledConnection.close();
+                } catch (IOException ignored) {
+                    // Best-effort test fixture cleanup.
+                }
+            }
+            if (stalledHandshakeServer != null) {
+                try {
+                    stalledHandshakeServer.close();
+                } catch (IOException ignored) {
+                    // Best-effort test fixture cleanup.
+                }
+            }
             server.stop().join();
         }
 
