@@ -9,7 +9,7 @@ Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 5분 
 | 구분 | 콘텐츠 | 동작 |
 | --- | --- | --- |
 | 캐릭터 | 도깨비 사냥꾼·질풍 무녀 | 호신결계 1회 또는 이동 속도 25% 고유 스킬 |
-| 아이템 | 봉인 부적 외 5종 | 자동 발사 투사체, 5레벨 재료 두 개로 진화 |
+| 아이템 | 봉인 부적 외 5종 | 자동 투사체 또는 즉시 낙뢰, 5레벨 재료 두 개로 진화 |
 | 적 | 그림자 도깨비 | 플레이어를 직선 추적 |
 | 경험치 | 혼불 | 적 사망 시 생성, 범위 안에서 수집 |
 | 상자 | 노란 상자·보라 상자 | 아이템 강화 또는 진화, 선택 중 전체 일시정지 |
@@ -27,6 +27,7 @@ Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 5분 
 - Spring Kafka, Apache Kafka
 - Spring Web MVC·Tomcat, Spring Security OAuth2·JWT
 - Bean Validation
+- Lombok 1.18.46
 - Armeria 1.40.0
 - JavaFX 25.0.4
 - Flyway, Docker Compose, H2, PostgreSQL Testcontainers
@@ -91,6 +92,7 @@ curl http://127.0.0.1:8081/internal/healthcheck
 - [개발 계획](개발계획.md)
 - [2차 개발 계획](docs/plans/조선-야행-2차-개발계획.md)
 - [3차 개발 계획](docs/plans/조선-야행-3차-연결-UI-오디오-설정-개선계획.md)
+- [4차 개발 계획](docs/plans/조선-야행-4차-도메인-낙뢰-음향-테스트-개선계획.md)
 - [도메인 모델](도메인모델.md)
 - [화면 디자인](화면디자인.md)
 - [자산 제작 기록](ASSETS.md)

@@ -148,12 +148,22 @@ Wide 16:9 original Joseon dark-fantasy ruined courtyard framed by black bamboo a
 
 ## 오디오 자산
 
+### 4차 음향 참고 자료
+
+| 참고 자료 | 확인한 특성 | 라이선스와 적용 범위 |
+| --- | --- | --- |
+| [PorkMuncher의 `swoosh.wav`](https://freesound.org/people/PorkMuncher/sounds/263595/) | 짧은 검 휘두름에서 공기가 빠르게 갈라지는 질감 | CC0. 원본 파일이나 표본은 사용하지 않고 벽사검의 잡음 포락선 설계만 참고 |
+| [f4ngy의 `Dealing Card`](https://freesound.org/people/f4ngy/sounds/240777/) | 짧고 마른 종이·카드 튕김 질감 | CC BY 4.0. 원본 파일이나 표본은 사용하지 않고 봉인 부적의 다중 임펄스 설계만 참고 |
+| [공유마당 `국악 배경음악 #55`](https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?wrtSn=13379638&menuNo=200026) | 국악기 음색의 층, 저음과 장단이 함께 움직이는 전체 분위기 | 주식회사 아이티앤, CC BY. 로컬 참고 파일을 저장소에 넣지 않고 원곡 선율도 옮기지 않음 |
+
+최종 WAV는 세 참고 자료를 변형한 파일이 아니다. 소리의 역할과 질감만 분석한 뒤 고정 seed, 수학 함수와 합성 잡음으로 새 표본을 처음부터 계산했다.
+
 | 자산 | 파일 | 제작과 검수 |
 | --- | --- | --- |
-| 로비 BGM | `desktop-app/src/main/resources/assets/audio/bgm-lobby.wav` | 36초, 느린 오음계 선율·저음 지속음·종소리풍 고음과 잔잔한 움직임을 합성. 반복 시작·끝의 표본과 에너지를 자동 검사 |
-| 전투 BGM | `desktop-app/src/main/resources/assets/audio/bgm-combat.wav` | 48초, 빠른 오음계 선율·저음·북 장단풍 타격과 결정적 잡음을 합성. 반복 시작·끝의 표본과 에너지를 자동 검사 |
-| 기본 아이템 공격 6종 | `sfx-attack-seal-talisman.wav`, `sfx-attack-flame-fan.wav`, `sfx-attack-exorcist-sword.wav`, `sfx-attack-returning-boomerang.wav`, `sfx-attack-thunder-bell.wav`, `sfx-attack-spirit-gourd.wav` | 주파수 이동, 배음, 짧은 잡음과 좌우 위치를 항목별로 다르게 합성 |
-| 진화 아이템 공격 6종 | `sfx-attack-ten-thousand-seal-array.wav`, `sfx-attack-heavenly-thunder-seal.wav`, `sfx-attack-inferno-returning-wheel.wav`, `sfx-attack-blue-flame-spirit-gourd.wav`, `sfx-attack-lunar-eclipse-twin-blades.wav`, `sfx-attack-thunder-flame-divine-orb.wav` | 기본 아이템보다 긴 잔향과 서로 다른 음역·배음·좌우 위치로 합성 |
+| 로비 BGM | `desktop-app/src/main/resources/assets/audio/bgm-lobby.wav` | 36초, 독자 오음계 48박 프레이즈·저음 진행·피리 3배음·뜯는 현 답구·성긴 장단과 바람을 합성. 0.75초 원형 크로스페이드와 반복 경계의 표본·에너지를 자동 검사 |
+| 전투 BGM | `desktop-app/src/main/resources/assets/audio/bgm-combat.wav` | 48초, 독자 오음계 96박 프레이즈·움직이는 저음·피리·현악 답구와 16단계 장단풍 타격을 합성. 0.75초 원형 크로스페이드와 반복 경계의 표본·에너지를 자동 검사 |
+| 기본 아이템 공격 6종 | `sfx-attack-seal-talisman.wav`, `sfx-attack-flame-fan.wav`, `sfx-attack-exorcist-sword.wav`, `sfx-attack-returning-boomerang.wav`, `sfx-attack-thunder-bell.wav`, `sfx-attack-spirit-gourd.wav` | 부적의 종이 플릭, 벽사검의 공기 가르기·금속 여운, 낙뢰의 초기 크랙·저역 충격처럼 공격 역할별 합성기를 분리 |
+| 진화 아이템 공격 6종 | `sfx-attack-ten-thousand-seal-array.wav`, `sfx-attack-heavenly-thunder-seal.wav`, `sfx-attack-inferno-returning-wheel.wav`, `sfx-attack-blue-flame-spirit-gourd.wav`, `sfx-attack-lunar-eclipse-twin-blades.wav`, `sfx-attack-thunder-flame-divine-orb.wav` | 기본 질감을 확장하되 검은 이중 휘두름, 낙뢰는 추가 갈래 크랙 등 서로 다른 포락선·배음·좌우 위치로 합성 |
 | 레벨업 효과 | `desktop-app/src/main/resources/assets/audio/sfx-level-up.wav` | 0.8초 상승 음정 합성 |
 | 호신결계 효과 | `desktop-app/src/main/resources/assets/audio/sfx-guard.wav` | 0.45초 하강 공명음 합성 |
 | 상자 효과 | `desktop-app/src/main/resources/assets/audio/sfx-chest.wav` | 0.9초 삼화음 합성 |
@@ -187,3 +197,4 @@ python3 tools/generate_audio_assets.py --check-only
 | 2026-08-05 | Codex 내장 `image_gen`, `remove_chroma_key.py`, Pillow 12.2.0, Python `wave` | 질풍 무녀·상자·아이템·로비 배경과 자체 합성 오디오 추가 |
 | 2026-08-05 | Google 공식 Sign in assets | 승인된 Google G 아이콘을 로그인 버튼 자산으로 추가 |
 | 2026-08-05 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 36초 로비·48초 전투 BGM과 기본·진화 아이템 공격 효과음 12개를 결정적으로 합성하고 자동 검수 추가 |
+| 2026-08-06 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 외부 표본·선율 없이 다중 오음계 프레이즈 BGM, 종이 플릭·검 휘두름·직접 낙뢰 중심의 역할별 합성기로 14개 음원 재설계 |
