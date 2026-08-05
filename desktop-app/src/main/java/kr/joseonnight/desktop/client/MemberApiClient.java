@@ -69,7 +69,17 @@ public final class MemberApiClient implements AutoCloseable {
                     ? List.of()
                     : body.characters().stream()
                             .map(character -> new MemberBootstrap.CharacterOption(
-                                    character.characterId(), character.displayName()))
+                                    character.resolvedId(),
+                                    character.displayName(),
+                                    character.description(),
+                                    character.unlocked(),
+                                    new MemberBootstrap.CatalogEntry(
+                                            character.startingItem().id(),
+                                            character.startingItem().displayName()),
+                                    new MemberBootstrap.SkillEntry(
+                                            character.skill().id(),
+                                            character.skill().displayName(),
+                                            character.skill().description())))
                             .toList();
             return new MemberBootstrap(nickname, characters);
         });
@@ -225,7 +235,21 @@ public final class MemberApiClient implements AutoCloseable {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record CharacterResponse(String characterId, String displayName) {
+    private record CharacterResponse(
+            String id,
+            String characterId,
+            String displayName,
+            String description,
+            boolean unlocked,
+            CatalogEntryResponse startingItem,
+            SkillResponse skill) {
+        private String resolvedId() {
+            return id == null || id.isBlank() ? characterId : id;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record CatalogEntryResponse(String id, String displayName) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

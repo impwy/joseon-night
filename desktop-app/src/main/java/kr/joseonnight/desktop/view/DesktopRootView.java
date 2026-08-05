@@ -1,6 +1,8 @@
 package kr.joseonnight.desktop.view;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import javafx.application.Platform;
@@ -12,10 +14,15 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
+import javafx.scene.effect.ColorAdjust;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
@@ -56,6 +63,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private final GameAudioService audioService;
     private final Consumer<String> browserOpener;
     private final GameView gameView;
+    private final SpriteAtlas sprites = new SpriteAtlas();
     private final ImageView lobbyBackground = createLobbyBackground();
 
     private final VBox loginPane = panel();
@@ -64,10 +72,13 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private final VBox settingsPane = panel();
     private final Label loginMessage = bodyLabel();
     private final Button loginButton = googleLoginButton();
+    private final ProgressIndicator loginProgress = new ProgressIndicator();
     private final TextField nicknameField = new TextField();
     private final Label registrationMessage = bodyLabel();
     private final Label welcomeLabel = bodyLabel();
-    private final ComboBox<String> characterSelector = new ComboBox<>();
+    private final HBox characterCards = new HBox(18);
+    private final Map<String, VBox> characterCardNodes = new LinkedHashMap<>();
+    private final Button startGameButton = primaryButton("야행 시작");
     private final CheckBox mutedCheckBox = new CheckBox("모든 소리 끄기");
     private final Slider musicVolumeSlider = volumeSlider();
     private final Slider effectsVolumeSlider = volumeSlider();
@@ -80,6 +91,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private MemberBootstrap bootstrap = MemberBootstrap.fallback();
     private AudioSettings audioSettings = AudioSettings.defaults();
     private String loadedSessionToken;
+    private String selectedCharacterId;
     private URI openedAuthorizationUri;
     private boolean applyingSettings;
 
@@ -139,17 +151,35 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     private void configureLoginPane() {
+        loginPane.setMaxSize(620, 600);
+        Label eyebrow = bodyLabel();
+        eyebrow.setText("GOOGLE 계정으로 계속");
+        eyebrow.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #c8a35a;");
         Label title = title("조선 야행");
         Label subtitle = bodyLabel();
-        subtitle.setText("달빛 아래 펼쳐지는 조선 다크 판타지 생존 야행");
+        subtitle.setText("달빛 아래 펼쳐지는 조선 다크 판타지 생존 야행에 참여하세요.");
         subtitle.setStyle("-fx-font-size: 17px; -fx-text-fill: #b9c7d7;");
+        subtitle.setMaxWidth(460);
+        Separator divider = new Separator();
+        divider.setMaxWidth(420);
+        divider.setStyle("-fx-opacity: 0.35;");
         loginMessage.setWrapText(true);
-        loginMessage.setMaxWidth(430);
+        loginMessage.setMaxWidth(390);
+        loginProgress.setMaxSize(24, 24);
+        loginProgress.setPrefSize(24, 24);
+        loginProgress.setVisible(false);
+        loginProgress.setManaged(false);
+        HBox progressRow = new HBox(10, loginProgress, loginMessage);
+        progressRow.setAlignment(Pos.CENTER);
+        Label privacy = bodyLabel();
+        privacy.setText("이메일·이름·프로필 사진은 저장하지 않습니다.\n로그인 식별값은 보호된 값으로만 보관합니다.");
+        privacy.setStyle("-fx-font-size: 13px; -fx-text-fill: #8fa2b7;");
+        privacy.setMaxWidth(430);
         loginButton.setOnAction(ignored -> {
             openedAuthorizationUri = null;
             authApiClient.beginLogin();
         });
-        loginPane.getChildren().addAll(title, subtitle, loginMessage, loginButton);
+        loginPane.getChildren().addAll(eyebrow, title, subtitle, divider, progressRow, loginButton, privacy);
     }
 
     private void configureRegistrationPane() {
@@ -168,23 +198,30 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     private void configureLobbyPane() {
+        lobbyPane.setMaxSize(1040, 660);
         Label title = title("조선 야행");
         welcomeLabel.setStyle("-fx-font-size: 19px; -fx-text-fill: #f4e7c5;");
         Label characterLabel = bodyLabel();
-        characterLabel.setText("출전 인물");
-        characterSelector.setMaxWidth(330);
-        characterSelector.setPrefWidth(330);
-        characterSelector.setStyle("-fx-font-size: 16px;");
+        characterLabel.setText("출전 인물 · 시작 아이템과 고유 스킬을 확인하세요");
+        characterCards.setAlignment(Pos.CENTER);
+        characterCards.setPadding(new Insets(8));
+        ScrollPane characterScroll = new ScrollPane(characterCards);
+        characterScroll.setFitToHeight(true);
+        characterScroll.setPannable(true);
+        characterScroll.setPrefViewportHeight(330);
+        characterScroll.setMaxWidth(940);
+        characterScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
 
-        Button startButton = primaryButton("야행 시작");
-        startButton.setOnAction(ignored -> startGame());
+        startGameButton.setDisable(true);
+        startGameButton.setOnAction(ignored -> startGame());
         Button settingsButton = secondaryButton("설정");
         settingsButton.setOnAction(ignored -> showScreen(RootScreen.SETTINGS));
         Button logoutButton = secondaryButton("로그아웃");
         logoutButton.setOnAction(ignored -> logout());
+        HBox actions = new HBox(12, startGameButton, settingsButton, logoutButton);
+        actions.setAlignment(Pos.CENTER);
         lobbyPane.getChildren().addAll(
-                title, welcomeLabel, characterLabel, characterSelector,
-                startButton, settingsButton, logoutButton);
+                title, welcomeLabel, characterLabel, characterScroll, actions);
     }
 
     private void configureSettingsPane() {
@@ -235,12 +272,15 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
 
     private void refreshAuthentication() {
         AuthState state = authApiClient.state();
-        loginMessage.setText(state.message());
-        loginButton.setDisable(state.phase() == AuthPhase.STARTING_ATTEMPT
-                || state.phase() == AuthPhase.WAITING_FOR_BROWSER);
-        loginButton.setText(state.phase() == AuthPhase.WAITING_FOR_BROWSER
-                ? GOOGLE_LOGIN_BUTTON_TEXT + "..."
-                : GOOGLE_LOGIN_BUTTON_TEXT);
+        boolean loginInProgress = state.phase() == AuthPhase.STARTING_ATTEMPT
+                || state.phase() == AuthPhase.WAITING_FOR_BROWSER;
+        loginMessage.setText(state.phase() == AuthPhase.WAITING_FOR_BROWSER
+                ? "브라우저에서 Google 로그인을 완료해 주세요."
+                : state.message());
+        loginButton.setDisable(loginInProgress);
+        loginButton.setText(GOOGLE_LOGIN_BUTTON_TEXT);
+        loginProgress.setVisible(loginInProgress);
+        loginProgress.setManaged(loginInProgress);
 
         switch (state.phase()) {
             case AUTHENTICATED -> onAuthenticated(state.session());
@@ -299,21 +339,27 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
 
     private void populateLobby() {
         welcomeLabel.setText(bootstrap.nickname() + " 님, 달빛 폐허가 기다립니다.");
-        characterSelector.getItems().setAll(
-                bootstrap.characters().stream().map(MemberBootstrap.CharacterOption::displayName).toList());
-        characterSelector.getSelectionModel().selectFirst();
+        selectedCharacterId = null;
+        characterCardNodes.clear();
+        characterCards.getChildren().clear();
+        for (MemberBootstrap.CharacterOption character : bootstrap.characters()) {
+            VBox card = createCharacterCard(character);
+            characterCardNodes.put(character.characterId(), card);
+            characterCards.getChildren().add(card);
+        }
+        bootstrap.firstUnlockedCharacter().ifPresent(this::selectCharacter);
     }
 
     private void startGame() {
         AuthSession session = authApiClient.state().session();
-        int selected = characterSelector.getSelectionModel().getSelectedIndex();
-        if (session == null || selected < 0 || selected >= bootstrap.characters().size()) {
+        MemberBootstrap.CharacterOption selected = bootstrap.unlockedCharacter(selectedCharacterId)
+                .orElse(null);
+        if (session == null || selected == null) {
             welcomeLabel.setText("로그인과 캐릭터 선택을 확인해 주세요.");
             return;
         }
-        String characterId = bootstrap.characters().get(selected).characterId();
         audioService.beginNewGame();
-        gameApiClient.startNewGame(session.accessToken(), characterId);
+        gameApiClient.startNewGame(session.accessToken(), selected.characterId());
         showScreen(RootScreen.COMBAT);
     }
 
@@ -331,6 +377,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private void logout() {
         loadedSessionToken = null;
         bootstrap = MemberBootstrap.fallback();
+        selectedCharacterId = null;
         gameApiClient.clearSession();
         authApiClient.logout();
     }
@@ -354,8 +401,10 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         try {
             browserOpener.accept(authorizationUri.toString());
         } catch (RuntimeException exception) {
-            loginMessage.setText("브라우저를 열지 못했습니다: " + authorizationUri);
+            loginMessage.setText("브라우저를 열지 못했습니다. Google 로그인을 다시 시도해 주세요.");
             loginButton.setDisable(false);
+            loginProgress.setVisible(false);
+            loginProgress.setManaged(false);
         }
     }
 
@@ -429,6 +478,76 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private boolean isCurrentSession(AuthSession session) {
         AuthSession current = authApiClient.state().session();
         return current != null && current.accessToken().equals(session.accessToken());
+    }
+
+    private VBox createCharacterCard(MemberBootstrap.CharacterOption character) {
+        ImageView portrait = new ImageView(sprites.player(character.characterId()));
+        portrait.setFitWidth(128);
+        portrait.setFitHeight(128);
+        portrait.setPreserveRatio(true);
+        portrait.setSmooth(false);
+        if (!character.unlocked()) {
+            ColorAdjust silhouette = new ColorAdjust();
+            silhouette.setSaturation(-1.0);
+            silhouette.setBrightness(-0.72);
+            portrait.setEffect(silhouette);
+            portrait.setOpacity(0.72);
+        }
+
+        Label name = new Label(character.displayName());
+        name.setStyle("-fx-font-size: 21px; -fx-font-weight: bold; -fx-text-fill: #f4dca3;");
+        Label description = cardLabel(character.description(), "#b9c7d7", 13);
+        Label startingItem = cardLabel(
+                "시작 아이템 · " + character.startingItem().displayName(), "#f1d58d", 14);
+        Label skill = cardLabel(
+                "고유 스킬 · " + character.skill().displayName(), "#b7d9e9", 14);
+        Label skillDescription = cardLabel(character.skill().description(), "#98aabd", 12);
+        Label status = cardLabel(character.unlocked() ? "선택 가능" : "잠김", "#d5b86f", 13);
+        status.setStyle(status.getStyle() + " -fx-font-weight: bold;");
+
+        VBox card = new VBox(7, portrait, name, description, startingItem, skill, skillDescription, status);
+        card.setAlignment(Pos.CENTER);
+        card.setPadding(new Insets(16));
+        card.setPrefSize(310, 315);
+        card.setMaxSize(310, 315);
+        card.setStyle(characterCardStyle(false, character.unlocked()));
+        if (character.unlocked()) {
+            card.setOnMouseClicked(ignored -> selectCharacter(character));
+        }
+        return card;
+    }
+
+    private void selectCharacter(MemberBootstrap.CharacterOption selected) {
+        if (!selected.unlocked()) {
+            return;
+        }
+        selectedCharacterId = selected.characterId();
+        startGameButton.setDisable(false);
+        for (MemberBootstrap.CharacterOption character : bootstrap.characters()) {
+            VBox card = characterCardNodes.get(character.characterId());
+            if (card != null) {
+                card.setStyle(characterCardStyle(
+                        character.characterId().equals(selectedCharacterId), character.unlocked()));
+            }
+        }
+    }
+
+    private static String characterCardStyle(boolean selected, boolean unlocked) {
+        String border = selected ? "#e2bb62" : "#435468";
+        String background = unlocked ? "rgba(19, 31, 44, 0.96)" : "rgba(12, 18, 27, 0.96)";
+        int borderWidth = selected ? 3 : 1;
+        return "-fx-background-color: " + background + "; -fx-background-radius: 12;"
+                + " -fx-border-color: " + border + "; -fx-border-radius: 12;"
+                + " -fx-border-width: " + borderWidth + ";";
+    }
+
+    private static Label cardLabel(String text, String color, int fontSize) {
+        Label label = new Label(text == null ? "" : text);
+        label.setStyle("-fx-font-size: " + fontSize + "px; -fx-text-fill: " + color + ";");
+        label.setWrapText(true);
+        label.setMaxWidth(270);
+        label.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        return label;
     }
 
     private static VBox panel() {

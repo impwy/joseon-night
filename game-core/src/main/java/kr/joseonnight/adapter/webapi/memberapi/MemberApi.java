@@ -6,8 +6,15 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import kr.joseonnight.adapter.security.jwt.MemberPrincipal;
+import kr.joseonnight.application.character.provided.CharacterCatalogEntry;
 import kr.joseonnight.application.character.provided.CharacterCatalogFinder;
+import kr.joseonnight.application.item.provided.ItemCatalogEntry;
+import kr.joseonnight.application.item.provided.ItemCatalogFinder;
 import kr.joseonnight.application.member.provided.MemberFinder;
 import kr.joseonnight.application.member.provided.MemberView;
 import kr.joseonnight.application.member.provided.MemberProgressionFinder;
@@ -38,6 +45,7 @@ public class MemberApi {
     private final MemberProgressionFinder progressionFinder;
     private final PlayRecordFinder playRecordFinder;
     private final CharacterCatalogFinder characterCatalogFinder;
+    private final ItemCatalogFinder itemCatalogFinder;
 
     public MemberApi(
             MemberFinder memberFinder,
@@ -45,7 +53,8 @@ public class MemberApi {
             MemberSettingsModifier settingsModifier,
             MemberProgressionFinder progressionFinder,
             PlayRecordFinder playRecordFinder,
-            CharacterCatalogFinder characterCatalogFinder
+            CharacterCatalogFinder characterCatalogFinder,
+            ItemCatalogFinder itemCatalogFinder
     ) {
         this.memberFinder = memberFinder;
         this.settingsFinder = settingsFinder;
@@ -53,6 +62,7 @@ public class MemberApi {
         this.progressionFinder = progressionFinder;
         this.playRecordFinder = playRecordFinder;
         this.characterCatalogFinder = characterCatalogFinder;
+        this.itemCatalogFinder = itemCatalogFinder;
     }
 
     @GetMapping("/bootstrap")
@@ -60,9 +70,10 @@ public class MemberApi {
         MemberView member = memberFinder.find(principal.memberId());
         MemberSettingsView settings = settingsFinder.find(principal.memberId());
         var unlockedIds = new HashSet<>(progressionFinder.unlockedCharacterIds(principal.memberId()));
+        Map<String, ItemCatalogEntry> items = itemCatalogFinder.findCatalog().items().stream()
+                .collect(Collectors.toUnmodifiableMap(ItemCatalogEntry::id, Function.identity()));
         List<CharacterResponse> characters = characterCatalogFinder.findCatalog().characters().stream()
-                .filter(value -> unlockedIds.contains(value.id()))
-                .map(value -> new CharacterResponse(value.id(), value.displayName()))
+                .map(value -> toCharacterResponse(value, items, unlockedIds.contains(value.id())))
                 .toList();
         return new BootstrapResponse(
                 settings.nickname(),
@@ -115,7 +126,40 @@ public class MemberApi {
     public record MemberResponse(Long id, String nickname, String role, String status) {
     }
 
-    public record CharacterResponse(String characterId, String displayName) {
+    private static CharacterResponse toCharacterResponse(
+            CharacterCatalogEntry character,
+            Map<String, ItemCatalogEntry> items,
+            boolean unlocked
+    ) {
+        ItemCatalogEntry startingItem = Objects.requireNonNull(
+                items.get(character.startingItemId()),
+                () -> "Starting item is absent from the catalog: " + character.startingItemId()
+        );
+        var skill = character.skill();
+        return new CharacterResponse(
+                character.id(),
+                character.displayName(),
+                character.description(),
+                unlocked,
+                new StartingItemResponse(startingItem.id(), startingItem.displayName()),
+                new SkillResponse(skill.id(), skill.displayName(), skill.description())
+        );
+    }
+
+    public record CharacterResponse(
+            String id,
+            String displayName,
+            String description,
+            boolean unlocked,
+            StartingItemResponse startingItem,
+            SkillResponse skill
+    ) {
+    }
+
+    public record StartingItemResponse(String id, String displayName) {
+    }
+
+    public record SkillResponse(String id, String displayName, String description) {
     }
 
     public record SettingsRequest(

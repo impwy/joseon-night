@@ -44,6 +44,7 @@ import kr.joseonnight.desktop.client.MemberApiClient;
 import kr.joseonnight.desktop.gameplay.DesktopApiStatus;
 import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.gameplay.InputState;
+import kr.joseonnight.desktop.member.MemberBootstrap;
 import kr.joseonnight.desktop.settings.AudioSettings;
 import kr.joseonnight.desktop.settings.TargetFps;
 import org.junit.jupiter.api.Test;
@@ -124,8 +125,16 @@ class DesktopApplicationIntegrationTest {
         try (MockPlatform backend = new MockPlatform();
              ClientFactory factory = clientFactory();
              MemberApiClient members = new MemberApiClient(webClient(backend, factory), new ObjectMapper())) {
-            assertThat(members.loadBootstrap("jwt-token").get(2, java.util.concurrent.TimeUnit.SECONDS)
-                    .nickname()).isEqualTo("달빛사냥꾼");
+            MemberBootstrap bootstrap = members.loadBootstrap("jwt-token")
+                    .get(2, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(bootstrap.nickname()).isEqualTo("달빛사냥꾼");
+            assertThat(bootstrap.characters()).hasSize(2);
+            assertThat(bootstrap.characters()).anySatisfy(character -> {
+                assertThat(character.displayName()).isEqualTo("질풍 무녀");
+                assertThat(character.unlocked()).isFalse();
+                assertThat(character.startingItem().displayName()).isEqualTo("화염 부채");
+                assertThat(character.skill().displayName()).isEqualTo("질풍걸음");
+            });
             assertThat(members.loadSettings("jwt-token").get(2, java.util.concurrent.TimeUnit.SECONDS))
                     .isEqualTo(new AudioSettings(false, 70, 65, TargetFps.FPS_60));
 
@@ -486,7 +495,18 @@ class DesktopApplicationIntegrationTest {
             if (path.equals("/api/v1/members/me/bootstrap")) {
                 return json(HttpStatus.OK, """
                         {"member":{"nickname":"달빛사냥꾼"},
-                         "characters":[{"characterId":"DOKKAEBI_HUNTER","displayName":"도깨비 사냥꾼"}]}
+                         "characters":[
+                           {"id":"dokkaebi-hunter","displayName":"도깨비 사냥꾼",
+                            "description":"봉인 부적으로 그림자를 사냥한다.","unlocked":true,
+                            "startingItem":{"id":"seal-talisman","displayName":"봉인 부적"},
+                            "skill":{"id":"protective-barrier","displayName":"호신결계",
+                                     "description":"한 번 충돌을 막는다."}},
+                           {"id":"gale-shaman","displayName":"질풍 무녀",
+                            "description":"빠른 발걸음으로 야행한다.","unlocked":false,
+                            "startingItem":{"id":"flame-fan","displayName":"화염 부채"},
+                            "skill":{"id":"gale-step","displayName":"질풍걸음",
+                                     "description":"이동 속도가 25% 증가한다."}}
+                         ]}
                         """);
             }
             if (path.equals("/api/v1/members/me/settings") && request.method().name().equals("GET")) {
