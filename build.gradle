@@ -14,7 +14,7 @@ ext {
 }
 
 subprojects {
-    group = 'kr.vamsur'
+    group = 'kr.joseon-night'
     version = '0.1.0-SNAPSHOT'
 
     apply plugin: 'java'

@@ -10,29 +10,41 @@ dependencies {
 
     api 'jakarta.validation:jakarta.validation-api'
     implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
-    implementation 'org.springframework.security:spring-security-core'
-    implementation 'com.linecorp.armeria:armeria-spring-boot3-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    implementation 'com.linecorp.armeria:armeria-spring-boot4-starter'
     compileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
+    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
 
     developmentOnly "org.springframework.boot:spring-boot-docker-compose:${rootProject.ext.springBootVersion}"
     runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.instancio:instancio-junit:5.6.0'
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
+    testImplementation 'org.testcontainers:postgresql:1.21.4'
     testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
     testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 application {
-    mainClass = 'kr.vamsur.GameCoreApplication'
+    mainClass = 'kr.joseonnight.GameCoreApplication'
 }
 
 springBoot {
-    mainClass = 'kr.vamsur.GameCoreApplication'
+    mainClass = 'kr.joseonnight.GameCoreApplication'
 }
 
 tasks.named('run') {

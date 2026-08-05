@@ -1,4 +1,4 @@
-name: vampiresurvivors-clone
+name: joseon-night
 
 services:
   postgres:

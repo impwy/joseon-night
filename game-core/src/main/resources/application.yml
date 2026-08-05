@@ -5,7 +5,7 @@ spring:
     proxy-target-class: false
   main:
     banner-mode: "off"
-    web-application-type: none
+    web-application-type: servlet
   datasource:
     url: ${JOSEON_NIGHT_DB_URL:jdbc:postgresql://127.0.0.1:15432/joseon_night}
     username: ${JOSEON_NIGHT_DB_USERNAME:joseon}
@@ -13,7 +13,9 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
+  flyway:
+    enabled: true
   data:
     redis:
       host: ${JOSEON_NIGHT_REDIS_HOST:127.0.0.1}
@@ -30,10 +32,21 @@ spring:
       file: ${JOSEON_NIGHT_COMPOSE_FILE:game-core/compose.yaml}
       lifecycle-management: start_only
 
+server:
+  address: 127.0.0.1
+  port: ${JOSEON_NIGHT_REST_PORT:8080}
+  servlet:
+    session:
+      timeout: 5m
+      cookie:
+        http-only: true
+        same-site: lax
+        secure: ${JOSEON_NIGHT_SESSION_COOKIE_SECURE:false}
+
 armeria:
   ports:
     - address: 127.0.0.1
-      port: ${JOSEON_NIGHT_SERVER_PORT:8080}
+      port: ${JOSEON_NIGHT_GAME_PORT:8081}
       protocols:
         - HTTP
   health-check-path: /internal/healthcheck
@@ -41,6 +54,27 @@ armeria:
   metrics-path: ""
   graceful-shutdown-quiet-period-millis: -1
   graceful-shutdown-timeout-millis: -1
+
+joseon-night:
+  security:
+    google:
+      client-id: ${JOSEON_NIGHT_GOOGLE_CLIENT_ID:}
+      client-secret: ${JOSEON_NIGHT_GOOGLE_CLIENT_SECRET:}
+      redirect-uri: ${JOSEON_NIGHT_GOOGLE_REDIRECT_URI:http://127.0.0.1:8080/api/v1/auth/google/callback/google}
+      subject-hmac-secret: ${JOSEON_NIGHT_GOOGLE_SUBJECT_HMAC_SECRET:}
+    jwt:
+      issuer: ${JOSEON_NIGHT_JWT_ISSUER:joseon-night}
+      audience: ${JOSEON_NIGHT_JWT_AUDIENCE:joseon-night-desktop}
+      public-key-base64: ${JOSEON_NIGHT_JWT_PUBLIC_KEY_BASE64:}
+      private-key-base64: ${JOSEON_NIGHT_JWT_PRIVATE_KEY_BASE64:}
+      access-token-seconds: ${JOSEON_NIGHT_JWT_ACCESS_TOKEN_SECONDS:1800}
+  redis:
+    member-cache-seconds: 300
+    catalog-cache-seconds: 21600
+    login-attempt-seconds: 300
+    websocket-ticket-seconds: 30
+  messaging:
+    play-record-topic: game.play-completed.v1
 
 logging:
   level:
