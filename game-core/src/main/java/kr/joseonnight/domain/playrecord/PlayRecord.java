@@ -13,6 +13,7 @@ import kr.joseonnight.domain.shared.AbstractEntity;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "play_records")
@@ -73,9 +74,10 @@ public class PlayRecord extends AbstractEntity {
         this.gameSession = Objects.requireNonNull(gameSession, "gameSession");
         this.memberId = Objects.requireNonNull(memberId, "memberId");
         this.characterId = requireText(characterId, "characterId");
-        if (score < 0 || killCount < 0 || level < 1 || durationMillis < 0) {
-            throw new IllegalArgumentException("play record values are outside their valid range");
-        }
+        Assert.isTrue(
+                score >= 0 && killCount >= 0 && level >= 1 && durationMillis >= 0,
+                "play record values are outside their valid range"
+        );
         this.score = score;
         this.killCount = killCount;
         this.level = level;
@@ -83,6 +85,10 @@ public class PlayRecord extends AbstractEntity {
         this.durationMillis = durationMillis;
         this.finalBuild = Map.copyOf(Objects.requireNonNull(finalBuild, "finalBuild"));
         this.endedAt = Objects.requireNonNull(endedAt, "endedAt");
+        Assert.isTrue(
+                outcome != PlayOutcome.ABANDONED || !rankingEligible,
+                "Abandoned games cannot be ranking eligible"
+        );
         this.rankingEligible = rankingEligible;
     }
 
@@ -129,9 +135,10 @@ public class PlayRecord extends AbstractEntity {
     private static String requireText(String value, String name) {
         Objects.requireNonNull(value, name);
         String stripped = value.strip();
-        if (stripped.isEmpty() || stripped.length() > 64) {
-            throw new IllegalArgumentException(name + " must contain between 1 and 64 characters");
-        }
+        Assert.isTrue(
+                !stripped.isEmpty() && stripped.length() <= 64,
+                name + " must contain between 1 and 64 characters"
+        );
         return stripped;
     }
 }

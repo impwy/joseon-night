@@ -13,6 +13,7 @@ import java.util.Objects;
 import kr.joseonnight.domain.shared.JsonConfiguration;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "items")
@@ -59,9 +60,7 @@ public class ItemDefinition {
         this.displayName = requireText(displayName, "displayName", 80);
         this.description = requireText(description, "description", 500);
         this.category = Objects.requireNonNull(category, "category");
-        if (maxLevel < 1) {
-            throw new IllegalArgumentException("maxLevel must be at least 1");
-        }
+        Assert.isTrue(maxLevel >= 1, "maxLevel must be at least 1");
         this.maxLevel = maxLevel;
         this.configuration = JsonConfiguration.fromMap(configuration);
         this.enabled = enabled;
@@ -109,9 +108,10 @@ public class ItemDefinition {
 
     private static String requireText(String value, String field, int maximumLength) {
         Objects.requireNonNull(value, field);
-        if (value.isBlank() || value.length() > maximumLength) {
-            throw new IllegalArgumentException(field + " must contain between 1 and " + maximumLength + " characters");
-        }
+        Assert.isTrue(
+                !value.isBlank() && value.length() <= maximumLength,
+                field + " must contain between 1 and " + maximumLength + " characters"
+        );
         return value;
     }
 }

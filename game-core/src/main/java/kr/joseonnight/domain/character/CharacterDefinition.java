@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.Objects;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "characters")
@@ -105,9 +106,10 @@ public class CharacterDefinition {
 
     private static String requireText(String value, String field, int maximumLength) {
         Objects.requireNonNull(value, field);
-        if (value.isBlank() || value.length() > maximumLength) {
-            throw new IllegalArgumentException(field + " must contain between 1 and " + maximumLength + " characters");
-        }
+        Assert.isTrue(
+                !value.isBlank() && value.length() <= maximumLength,
+                field + " must contain between 1 and " + maximumLength + " characters"
+        );
         return value;
     }
 }

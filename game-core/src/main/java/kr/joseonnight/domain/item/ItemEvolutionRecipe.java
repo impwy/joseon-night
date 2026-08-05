@@ -11,6 +11,7 @@ import java.util.Objects;
 import kr.joseonnight.domain.shared.JsonConfiguration;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "item_evolution_recipes")
@@ -52,9 +53,10 @@ public class ItemEvolutionRecipe {
         this.displayName = requireText(displayName, "displayName", 80);
         this.firstItemId = requireText(firstItemId, "firstItemId", 64);
         this.secondItemId = requireText(secondItemId, "secondItemId", 64);
-        if (this.firstItemId.equals(this.secondItemId)) {
-            throw new IllegalArgumentException("Evolution materials must be different");
-        }
+        Assert.isTrue(
+                !this.firstItemId.equals(this.secondItemId),
+                "Evolution materials must be different"
+        );
         this.configuration = JsonConfiguration.fromMap(configuration);
         this.enabled = enabled;
     }
@@ -96,9 +98,10 @@ public class ItemEvolutionRecipe {
 
     private static String requireText(String value, String field, int maximumLength) {
         Objects.requireNonNull(value, field);
-        if (value.isBlank() || value.length() > maximumLength) {
-            throw new IllegalArgumentException(field + " must contain between 1 and " + maximumLength + " characters");
-        }
+        Assert.isTrue(
+                !value.isBlank() && value.length() <= maximumLength,
+                field + " must contain between 1 and " + maximumLength + " characters"
+        );
         return value;
     }
 }

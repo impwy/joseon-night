@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.gameplay;
 
+import org.springframework.util.Assert;
+
 /**
  * Numeric invariants for one game session.
  */
@@ -63,20 +65,20 @@ public record GameRules(
     }
 
     private static void requirePositive(double value, String name) {
-        if (!Double.isFinite(value) || value <= 0.0) {
-            throw new IllegalArgumentException(name + " must be a finite positive number");
-        }
+        Assert.isTrue(
+                Double.isFinite(value) && value > 0.0,
+                name + " must be a finite positive number"
+        );
     }
 
     private static void requireNotNegative(double value, String name) {
-        if (!Double.isFinite(value) || value < 0.0) {
-            throw new IllegalArgumentException(name + " must be a finite non-negative number");
-        }
+        Assert.isTrue(
+                Double.isFinite(value) && value >= 0.0,
+                name + " must be a finite non-negative number"
+        );
     }
 
     private static void requirePositive(int value, String name) {
-        if (value <= 0) {
-            throw new IllegalArgumentException(name + " must be positive");
-        }
+        Assert.isTrue(value > 0, name + " must be positive");
     }
 }

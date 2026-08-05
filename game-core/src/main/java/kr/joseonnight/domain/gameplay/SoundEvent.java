@@ -1,6 +1,7 @@
 package kr.joseonnight.domain.gameplay;
 
 import java.util.Objects;
+import org.springframework.util.Assert;
 
 /**
  * One-shot sound cue whose stable id lets clients ignore a replayed snapshot.
@@ -8,9 +9,7 @@ import java.util.Objects;
 public record SoundEvent(long id, SoundCue type) {
 
     public SoundEvent {
-        if (id <= 0L) {
-            throw new IllegalArgumentException("id must be positive");
-        }
+        Assert.isTrue(id > 0L, "id must be positive");
         Objects.requireNonNull(type, "type");
     }
 }

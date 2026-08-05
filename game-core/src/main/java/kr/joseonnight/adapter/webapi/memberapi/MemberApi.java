@@ -25,6 +25,7 @@ import kr.joseonnight.application.membersettings.provided.MemberSettingsView;
 import kr.joseonnight.application.playrecord.provided.PlayRecordFinder;
 import kr.joseonnight.application.playrecord.provided.PlayRecordView;
 import kr.joseonnight.domain.membersettings.TargetFps;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Validated
 @RequestMapping("/api/v1/members/me")
+@RequiredArgsConstructor
 public class MemberApi {
 
     private final MemberFinder memberFinder;
@@ -46,24 +48,6 @@ public class MemberApi {
     private final PlayRecordFinder playRecordFinder;
     private final CharacterCatalogFinder characterCatalogFinder;
     private final ItemCatalogFinder itemCatalogFinder;
-
-    public MemberApi(
-            MemberFinder memberFinder,
-            MemberSettingsFinder settingsFinder,
-            MemberSettingsModifier settingsModifier,
-            MemberProgressionFinder progressionFinder,
-            PlayRecordFinder playRecordFinder,
-            CharacterCatalogFinder characterCatalogFinder,
-            ItemCatalogFinder itemCatalogFinder
-    ) {
-        this.memberFinder = memberFinder;
-        this.settingsFinder = settingsFinder;
-        this.settingsModifier = settingsModifier;
-        this.progressionFinder = progressionFinder;
-        this.playRecordFinder = playRecordFinder;
-        this.characterCatalogFinder = characterCatalogFinder;
-        this.itemCatalogFinder = itemCatalogFinder;
-    }
 
     @GetMapping("/bootstrap")
     public BootstrapResponse bootstrap(@AuthenticationPrincipal MemberPrincipal principal) {

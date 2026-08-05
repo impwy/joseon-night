@@ -8,6 +8,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "member_items")
@@ -35,7 +36,7 @@ public class MemberItem {
         this.unlockedAt = Objects.requireNonNull(unlockedAt, "unlockedAt");
     }
 
-    public static MemberItem unlock(Long memberId, String itemId, Instant unlockedAt) {
+    static MemberItem unlock(Long memberId, String itemId, Instant unlockedAt) {
         return new MemberItem(memberId, itemId, unlockedAt);
     }
 
@@ -45,9 +46,10 @@ public class MemberItem {
 
     private static String requireId(String value) {
         Objects.requireNonNull(value, "itemId");
-        if (value.isBlank() || value.length() > 64) {
-            throw new IllegalArgumentException("itemId must contain between 1 and 64 characters");
-        }
+        Assert.isTrue(
+                !value.isBlank() && value.length() <= 64,
+                "itemId must contain between 1 and 64 characters"
+        );
         return value;
     }
 }

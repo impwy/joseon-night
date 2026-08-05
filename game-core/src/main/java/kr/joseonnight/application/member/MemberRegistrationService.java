@@ -12,8 +12,6 @@ import kr.joseonnight.application.member.required.MemberRepository;
 import kr.joseonnight.application.member.required.OAuthIdentityRepository;
 import kr.joseonnight.application.membersettings.provided.MemberSettingsCreator;
 import kr.joseonnight.domain.member.Member;
-import kr.joseonnight.domain.member.OAuthIdentity;
-import kr.joseonnight.domain.member.OAuthProvider;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -24,6 +22,7 @@ public final class MemberRegistrationService implements MemberRegister {
 
     private final MemberRepository memberRepository;
     private final OAuthIdentityRepository identityRepository;
+    private final MemberValidationService validationService;
     private final MemberSettingsCreator settingsCreator;
     private final MemberProgressionManager progressionManager;
     private final MemberCache memberCache;
@@ -33,6 +32,7 @@ public final class MemberRegistrationService implements MemberRegister {
     public MemberRegistrationService(
             MemberRepository memberRepository,
             OAuthIdentityRepository identityRepository,
+            MemberValidationService validationService,
             MemberSettingsCreator settingsCreator,
             MemberProgressionManager progressionManager,
             MemberCache memberCache,
@@ -40,6 +40,7 @@ public final class MemberRegistrationService implements MemberRegister {
     ) {
         this.memberRepository = memberRepository;
         this.identityRepository = identityRepository;
+        this.validationService = validationService;
         this.settingsCreator = settingsCreator;
         this.progressionManager = progressionManager;
         this.memberCache = memberCache;
@@ -49,16 +50,10 @@ public final class MemberRegistrationService implements MemberRegister {
     @Override
     @Transactional
     public MemberView register(MemberRegistrationInfo registrationInfo) {
-        if (identityRepository.existsByProviderAndSubjectHmac(
-                OAuthProvider.GOOGLE,
-                registrationInfo.providerSubjectHmac()
-        )) {
-            throw new DuplicateMemberException();
-        }
+        validationService.rejectRegisteredGoogleIdentity(registrationInfo.providerSubjectHmac());
         Instant now = Instant.now(clock);
         Member member = memberRepository.save(Member.register(now));
-        identityRepository.save(OAuthIdentity.connectGoogle(
-                member.getId(),
+        identityRepository.save(member.connectGoogle(
                 registrationInfo.providerSubjectHmac(),
                 now
         ));

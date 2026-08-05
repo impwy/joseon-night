@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "outbox_events")
@@ -80,8 +81,11 @@ public class OutboxEvent {
     }
 
     public void markPublished(Instant now) {
+        Instant published = Objects.requireNonNull(now, "now");
+        Assert.state(status == OutboxStatus.PENDING, "Only a pending outbox event can be published");
+        Assert.isTrue(!published.isBefore(occurredAt), "Published time cannot be before occurrence");
         status = OutboxStatus.PUBLISHED;
-        publishedAt = Objects.requireNonNull(now, "now");
+        publishedAt = published;
     }
 
     public String getId() { return id; }

@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.AbstractEntity;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "member_settings")
@@ -105,16 +106,15 @@ public class MemberSettings extends AbstractEntity {
     private static String validateNickname(String value) {
         Objects.requireNonNull(value, "nickname");
         String stripped = value.strip();
-        if (!stripped.matches("[\\p{L}\\p{N}_-]{2,20}")) {
-            throw new IllegalArgumentException("nickname must contain 2 to 20 letters or numbers");
-        }
+        Assert.isTrue(
+                stripped.matches("[\\p{L}\\p{N}_-]{2,20}"),
+                "nickname must contain 2 to 20 letters or numbers"
+        );
         return stripped;
     }
 
     private static int validateVolume(int value) {
-        if (value < 0 || value > 100) {
-            throw new IllegalArgumentException("volume must be between 0 and 100");
-        }
+        Assert.isTrue(value >= 0 && value <= 100, "volume must be between 0 and 100");
         return value;
     }
 }

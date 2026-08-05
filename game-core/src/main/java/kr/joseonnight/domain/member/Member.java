@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.AbstractEntity;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "members")
@@ -43,11 +44,32 @@ public class Member extends AbstractEntity {
         return new Member(registeredAt);
     }
 
-    public void recordLogin(Instant loggedInAt) {
-        if (status != MemberStatus.ACTIVE) {
-            throw new IllegalStateException("Disabled members cannot log in");
-        }
-        lastLoginAt = Objects.requireNonNull(loggedInAt, "loggedInAt");
+    public OAuthIdentity connectGoogle(String subjectHmac, Instant connectedAt) {
+        return OAuthIdentity.connectGoogle(requirePersistedId(), subjectHmac, connectedAt);
+    }
+
+    public MemberCharacter unlockCharacter(String characterId, Instant unlockedAt) {
+        return MemberCharacter.unlock(requirePersistedId(), characterId, unlockedAt);
+    }
+
+    public MemberItem unlockItem(String itemId, Instant unlockedAt) {
+        return MemberItem.unlock(requirePersistedId(), itemId, unlockedAt);
+    }
+
+    public void recordLogin(OAuthIdentity identity, Instant loggedInAt) {
+        Objects.requireNonNull(identity, "identity");
+        Instant validatedLoggedInAt = Objects.requireNonNull(loggedInAt, "loggedInAt");
+        Assert.state(status == MemberStatus.ACTIVE, "Disabled members cannot log in");
+        Assert.isTrue(
+                Objects.equals(getId(), identity.getMemberId()),
+                "OAuth identity must belong to this member"
+        );
+        Assert.isTrue(
+                !validatedLoggedInAt.isBefore(lastLoginAt),
+                "Login time cannot precede the previous login"
+        );
+        identity.recordLogin(validatedLoggedInAt);
+        lastLoginAt = validatedLoggedInAt;
     }
 
     public void disable() {
@@ -68,6 +90,12 @@ public class Member extends AbstractEntity {
 
     public Instant getLastLoginAt() {
         return lastLoginAt;
+    }
+
+    private Long requirePersistedId() {
+        Long memberId = getId();
+        Assert.state(memberId != null, "Member must be persisted before creating internal components");
+        return memberId;
     }
 
 }

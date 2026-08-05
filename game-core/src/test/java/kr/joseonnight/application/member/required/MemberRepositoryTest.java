@@ -43,7 +43,7 @@ class MemberRepositoryTest {
     @Test
     void persistsMemberIdentityAndSettingsThroughRequiredPorts() {
         Member member = memberRepository.save(Member.register(NOW));
-        identityRepository.save(OAuthIdentity.connectGoogle(member.getId(), SUBJECT_HMAC, NOW));
+        identityRepository.save(member.connectGoogle(SUBJECT_HMAC, NOW));
         settingsRepository.save(MemberSettings.create(member.getId(), "야행꾼", NOW));
 
         entityManager.flush();
@@ -97,11 +97,12 @@ class MemberRepositoryTest {
     @Test
     void verifiesTheMemberCharacterPrimaryKeyConstraintAtFlushTime() {
         Member member = memberRepository.save(Member.register(NOW));
-        memberCharacterRepository.save(MemberCharacter.unlock(member.getId(), "dokkaebi-hunter", NOW));
+        memberCharacterRepository.save(member.unlockCharacter("dokkaebi-hunter", NOW));
         entityManager.flush();
         entityManager.clear();
 
-        entityManager.persist(MemberCharacter.unlock(member.getId(), "dokkaebi-hunter", NOW));
+        Member reloaded = memberRepository.findById(member.getId()).orElseThrow();
+        entityManager.persist(reloaded.unlockCharacter("dokkaebi-hunter", NOW));
 
         assertThatThrownBy(() -> entityManager.flush())
                 .hasRootCauseInstanceOf(SQLException.class);

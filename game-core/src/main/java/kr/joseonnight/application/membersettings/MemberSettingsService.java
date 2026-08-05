@@ -10,24 +10,22 @@ import kr.joseonnight.application.membersettings.provided.MemberSettingsView;
 import kr.joseonnight.application.membersettings.required.MemberSettingsRepository;
 import kr.joseonnight.domain.membersettings.MemberSettings;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class MemberSettingsService
         implements MemberSettingsCreator, MemberSettingsFinder, MemberSettingsModifier {
 
     private final MemberSettingsRepository settingsRepository;
+    private final MemberSettingsValidationService validationService;
     private final Clock clock;
-
-    public MemberSettingsService(MemberSettingsRepository settingsRepository, Clock clock) {
-        this.settingsRepository = settingsRepository;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional
     public MemberSettingsView create(Long memberId, String nickname) {
-        rejectDuplicateNickname(nickname);
+        validationService.rejectDuplicateNickname(nickname);
         MemberSettings settings = settingsRepository.save(
                 MemberSettings.create(memberId, nickname, Instant.now(clock))
         );
@@ -55,13 +53,6 @@ public final class MemberSettingsService
     }
 
     private MemberSettings findEntity(Long memberId) {
-        return settingsRepository.findByMemberId(memberId)
-                .orElseThrow(() -> new MemberSettingsNotFoundException(memberId));
-    }
-
-    private void rejectDuplicateNickname(String nickname) {
-        if (settingsRepository.existsByNickname(nickname.strip())) {
-            throw new DuplicateNicknameException(nickname);
-        }
+        return validationService.requireSettings(memberId);
     }
 }

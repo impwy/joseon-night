@@ -7,7 +7,6 @@ import kr.joseonnight.application.member.provided.MemberAuthentication;
 import kr.joseonnight.application.member.provided.MemberAuthenticator;
 import kr.joseonnight.application.member.provided.MemberView;
 import kr.joseonnight.application.member.required.MemberCache;
-import kr.joseonnight.application.member.required.MemberRepository;
 import kr.joseonnight.application.member.required.OAuthIdentityRepository;
 import kr.joseonnight.domain.member.Member;
 import kr.joseonnight.domain.member.OAuthIdentity;
@@ -20,20 +19,20 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @ValidatedApplicationService
 public final class MemberAuthenticationService implements MemberAuthenticator {
 
-    private final MemberRepository memberRepository;
     private final OAuthIdentityRepository identityRepository;
+    private final MemberValidationService validationService;
     private final MemberCache memberCache;
     private final Clock clock;
 
     @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "Application port is an injected collaborator")
     public MemberAuthenticationService(
-            MemberRepository memberRepository,
             OAuthIdentityRepository identityRepository,
+            MemberValidationService validationService,
             MemberCache memberCache,
             Clock clock
     ) {
-        this.memberRepository = memberRepository;
         this.identityRepository = identityRepository;
+        this.validationService = validationService;
         this.memberCache = memberCache;
         this.clock = clock;
     }
@@ -50,11 +49,9 @@ public final class MemberAuthenticationService implements MemberAuthenticator {
     }
 
     private MemberAuthentication recordLogin(OAuthIdentity identity) {
-        Member member = memberRepository.findById(identity.getMemberId())
-                .orElseThrow(() -> new MemberNotFoundException(identity.getMemberId()));
+        Member member = validationService.requireMember(identity.getMemberId());
         Instant now = Instant.now(clock);
-        identity.recordLogin(now);
-        member.recordLogin(now);
+        member.recordLogin(identity, now);
         MemberView view = MemberView.from(member);
         evictCacheAfterCommit(member.getId());
         return MemberAuthentication.authenticated(view);

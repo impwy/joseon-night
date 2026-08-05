@@ -11,6 +11,7 @@ ext {
     javafxVersion = '25.0.4'
     archUnitVersion = '1.4.2'
     junitVersion = '6.0.3'
+    lombokVersion = '1.18.46'
 }
 
 subprojects {
@@ -19,6 +20,13 @@ subprojects {
 
     apply plugin: 'java'
     apply plugin: 'com.github.spotbugs'
+
+    dependencies {
+        compileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+        annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+        testCompileOnly "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+        testAnnotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+    }
 
     java {
         toolchain {

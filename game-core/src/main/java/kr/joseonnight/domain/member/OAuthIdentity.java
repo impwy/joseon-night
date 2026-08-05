@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.AbstractEntity;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.springframework.util.Assert;
 
 @Entity
 @Table(
@@ -60,12 +61,17 @@ public class OAuthIdentity extends AbstractEntity {
         lastLoginAt = connectedAt;
     }
 
-    public static OAuthIdentity connectGoogle(Long memberId, String subjectHmac, Instant connectedAt) {
+    static OAuthIdentity connectGoogle(Long memberId, String subjectHmac, Instant connectedAt) {
         return new OAuthIdentity(memberId, OAuthProvider.GOOGLE, subjectHmac, connectedAt);
     }
 
-    public void recordLogin(Instant loggedInAt) {
-        lastLoginAt = Objects.requireNonNull(loggedInAt, "loggedInAt");
+    void recordLogin(Instant loggedInAt) {
+        Instant validatedLoggedInAt = Objects.requireNonNull(loggedInAt, "loggedInAt");
+        Assert.isTrue(
+                !validatedLoggedInAt.isBefore(lastLoginAt),
+                "Login time cannot precede the previous login"
+        );
+        lastLoginAt = validatedLoggedInAt;
     }
 
     public Long getMemberId() { return memberId; }
@@ -76,9 +82,10 @@ public class OAuthIdentity extends AbstractEntity {
 
     private static String validateSubjectHmac(String value) {
         Objects.requireNonNull(value, "subjectHmac");
-        if (!value.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("subjectHmac must be a lowercase SHA-256 HMAC");
-        }
+        Assert.isTrue(
+                value.matches("[0-9a-f]{64}"),
+                "subjectHmac must be a lowercase SHA-256 HMAC"
+        );
         return value;
     }
 }
