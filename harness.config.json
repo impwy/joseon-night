@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "commands": {
+    "test": [
+      {
+        "name": "harness-unit-tests",
+        "argv": [
+          "python3",
+          "-B",
+          "-m",
+          "unittest",
+          "tools/test_agent_harness.py"
+        ]
+      },
+      {
+        "name": "gradle-tests",
+        "argv": [
+          "./gradlew",
+          "test"
+        ]
+      }
+    ],
+    "verify": [
+      {
+        "name": "gradle-clean-check",
+        "argv": [
+          "./gradlew",
+          "clean",
+          "check"
+        ]
+      }
+    ]
+  },
+  "manual_check_guidance": [
+    "백엔드 실행 또는 인프라 변경 시 Compose 상태와 health/status API를 확인한다.",
+    "JavaFX 화면, 입력 또는 렌더링 변경 시 macOS에서 실제 게임 흐름을 확인한다."
+  ]
+}

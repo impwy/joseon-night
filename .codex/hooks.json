@@ -1,0 +1,57 @@
+{
+  "description": "Require a fresh project harness pass before a modifying Codex turn can stop.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/tools/agent_harness.py\" hook",
+            "timeout": 5,
+            "statusMessage": "Loading project harness state",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/tools/agent_harness.py\" hook",
+            "timeout": 5,
+            "statusMessage": "Loading project harness rules",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(apply_patch|Edit|Write|Bash)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/tools/agent_harness.py\" hook",
+            "timeout": 5,
+            "statusMessage": "Checking harness plan"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/tools/agent_harness.py\" hook",
+            "timeout": 5,
+            "statusMessage": "Checking harness gate"
+          }
+        ]
+      }
+    ]
+  }
+}

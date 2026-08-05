@@ -5,3 +5,12 @@ out/
 *.iml
 .DS_Store
 hs_err_pid*
+.agent-harness/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
