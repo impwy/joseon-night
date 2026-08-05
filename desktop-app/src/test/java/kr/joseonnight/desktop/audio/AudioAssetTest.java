@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Test;
 class AudioAssetTest {
     private static final int SAMPLE_RATE = 22_050;
     private static final int CHANNELS = 2;
+    private static final int MAX_LOOP_DISCONTINUITY = 512;
+    private static final double MINIMUM_BOUNDARY_RMS = 350.0;
+    private static final double MINIMUM_BOUNDARY_RMS_RATIO = 0.40;
 
     private static final List<AssetExpectation> GENERATED_ASSETS = List.of(
             new AssetExpectation("bgm-lobby.wav", 36 * SAMPLE_RATE, true),
@@ -90,16 +93,41 @@ class AudioAssetTest {
         if (!expectation.looped()) {
             return;
         }
+        verifyLoopBoundary(expectation, bytes, rms);
+    }
+
+    private static void verifyLoopBoundary(
+            AssetExpectation expectation, byte[] bytes, double overallRms) {
         int finalFrameOffset = bytes.length - 4;
         for (int channel = 0; channel < CHANNELS; channel++) {
             int first = sampleAt(bytes, channel * 2);
             int last = sampleAt(bytes, finalFrameOffset + channel * 2);
-            assertThat(Math.abs(first)).as(expectation.filename() + " first sample").isLessThanOrEqualTo(256);
-            assertThat(Math.abs(last)).as(expectation.filename() + " last sample").isLessThanOrEqualTo(256);
             assertThat(Math.abs(first - last))
                     .as(expectation.filename() + " loop discontinuity")
-                    .isLessThanOrEqualTo(256);
+                    .isLessThanOrEqualTo(MAX_LOOP_DISCONTINUITY);
         }
+
+        int boundaryWindowBytes = SAMPLE_RATE / 20 * CHANNELS * 2;
+        double startRms = rms(bytes, 0, boundaryWindowBytes);
+        double endRms = rms(bytes, bytes.length - boundaryWindowBytes, bytes.length);
+        double requiredRms = Math.max(MINIMUM_BOUNDARY_RMS, overallRms * MINIMUM_BOUNDARY_RMS_RATIO);
+        assertThat(startRms)
+                .as(expectation.filename() + " start boundary RMS")
+                .isGreaterThanOrEqualTo(requiredRms);
+        assertThat(endRms)
+                .as(expectation.filename() + " end boundary RMS")
+                .isGreaterThanOrEqualTo(requiredRms);
+    }
+
+    private static double rms(byte[] bytes, int startOffset, int endOffset) {
+        long squareSum = 0L;
+        int sampleCount = 0;
+        for (int offset = startOffset; offset < endOffset; offset += 2) {
+            int sample = sampleAt(bytes, offset);
+            squareSum += (long) sample * sample;
+            sampleCount++;
+        }
+        return Math.sqrt((double) squareSum / sampleCount);
     }
 
     private static int sampleAt(byte[] bytes, int offset) {
