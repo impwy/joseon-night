@@ -24,6 +24,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-json'
     implementation 'com.linecorp.armeria:armeria'
     compileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
+    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
+    contractTestCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
@@ -35,15 +37,15 @@ dependencies {
 
 javafx {
     version = rootProject.ext.javafxVersion
-    modules = ['javafx.controls']
+    modules = ['javafx.controls', 'javafx.media']
 }
 
 application {
-    mainClass = 'kr.vamsur.desktop.DesktopApplication'
+    mainClass = 'kr.joseonnight.desktop.DesktopApplication'
 }
 
 springBoot {
-    mainClass = 'kr.vamsur.desktop.DesktopApplication'
+    mainClass = 'kr.joseonnight.desktop.DesktopApplication'
 }
 
 tasks.named('run') {
@@ -55,7 +57,7 @@ tasks.named('bootRun') {
 }
 
 tasks.register('contractTest', Test) {
-    description = 'Runs the real game-core to desktop Armeria contract test.'
+    description = 'Checks the actual game-core JSON snapshot against the desktop read model.'
     group = 'verification'
     testClassesDirs = sourceSets.contractTest.output.classesDirs
     classpath = sourceSets.contractTest.runtimeClasspath

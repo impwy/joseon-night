@@ -1,0 +1,52 @@
+package kr.joseonnight.desktop.contract;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.Arrays;
+import kr.joseonnight.application.gameplay.GameService;
+import kr.joseonnight.application.gameplay.provided.GameSessionHandle;
+import kr.joseonnight.desktop.gameplay.GamePhase;
+import kr.joseonnight.domain.gameplay.CharacterType;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+
+/** Verifies that the framework-free desktop snapshot accepts the actual game-core JSON shape. */
+class DesktopCoreContractTest {
+
+    @Test
+    void generalUpgradeIdentifiersMatchTheGameCoreSocketContract() {
+        assertThat(Arrays.stream(kr.joseonnight.desktop.gameplay.UpgradeType.values())
+                .map(Enum::name)
+                .toList())
+                .containsExactlyElementsOf(Arrays.stream(kr.joseonnight.domain.gameplay.UpgradeType.values())
+                        .map(Enum::name)
+                        .toList());
+        assertThat(kr.joseonnight.desktop.gameplay.UpgradeType.ITEM_DAMAGE.description())
+                .contains("모든 아이템");
+    }
+
+    @Test
+    void actualGameCoreSnapshotDeserializesIntoTheDesktopReadModel() {
+        GameService gameService = GameService.defaultGame();
+        GameSessionHandle handle = gameService.startNewGame("contract-member", CharacterType.GALE_SHAMAN);
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        String coreJson = objectMapper.writeValueAsString(handle.snapshot());
+        kr.joseonnight.desktop.gameplay.GameSnapshot desktopSnapshot = objectMapper.readValue(
+                coreJson,
+                kr.joseonnight.desktop.gameplay.GameSnapshot.class);
+
+        assertThat(desktopSnapshot.phase()).isEqualTo(GamePhase.RUNNING);
+        assertThat(desktopSnapshot.characterId()).isEqualTo("GALE_SHAMAN");
+        assertThat(desktopSnapshot.player().kindId()).isEqualTo("gale-shaman");
+        assertThat(desktopSnapshot.itemSlots()).isNotEmpty();
+        assertThat(desktopSnapshot.itemSlots().getFirst().displayName()).isEqualTo("화염 부채");
+        assertThat(desktopSnapshot.occupiedItemSlots()).isEqualTo(1);
+        assertThat(desktopSnapshot.evolutions()).isEmpty();
+        assertThat(desktopSnapshot.barrierAvailable()).isFalse();
+        assertThat(desktopSnapshot.invulnerabilityRemainingSeconds()).isZero();
+        assertThat(desktopSnapshot.chests()).hasSize(5);
+        assertThat(desktopSnapshot.chestIndicators()).hasSize(5);
+        assertThat(desktopSnapshot.soundEvents()).isEmpty();
+    }
+}
