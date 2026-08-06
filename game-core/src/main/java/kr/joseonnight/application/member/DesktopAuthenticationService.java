@@ -29,10 +29,12 @@ import kr.joseonnight.application.member.required.DesktopLoginStatus;
 import kr.joseonnight.application.membersettings.provided.MemberSettingsFinder;
 import kr.joseonnight.application.membersettings.provided.MemberSettingsView;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 
 @ValidatedApplicationService
 @ConditionalOnBean({DesktopAuthorizationUriFactory.class, AccessTokenIssuer.class})
+@RequiredArgsConstructor
 public final class DesktopAuthenticationService implements DesktopAuthentication {
 
     private final DesktopLoginAttemptStore attemptStore;
@@ -44,26 +46,6 @@ public final class DesktopAuthenticationService implements DesktopAuthentication
     private final AccessTokenIssuer accessTokenIssuer;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
-
-    public DesktopAuthenticationService(
-            DesktopLoginAttemptStore attemptStore,
-            DesktopAuthorizationUriFactory authorizationUriFactory,
-            MemberAuthenticator memberAuthenticator,
-            MemberRegister memberRegister,
-            MemberFinder memberFinder,
-            MemberSettingsFinder settingsFinder,
-            AccessTokenIssuer accessTokenIssuer,
-            Clock clock
-    ) {
-        this.attemptStore = attemptStore;
-        this.authorizationUriFactory = authorizationUriFactory;
-        this.memberAuthenticator = memberAuthenticator;
-        this.memberRegister = memberRegister;
-        this.memberFinder = memberFinder;
-        this.settingsFinder = settingsFinder;
-        this.accessTokenIssuer = accessTokenIssuer;
-        this.clock = clock;
-    }
 
     @Override
     public DesktopLoginStart start() {

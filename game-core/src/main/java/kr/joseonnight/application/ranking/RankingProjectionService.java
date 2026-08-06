@@ -5,15 +5,13 @@ import kr.joseonnight.application.ranking.provided.RankingUpdater;
 import kr.joseonnight.application.ranking.required.LeaderboardStore;
 import kr.joseonnight.domain.ranking.RankingMetric;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class RankingProjectionService implements RankingUpdater {
 
     private final LeaderboardStore leaderboardStore;
-
-    public RankingProjectionService(LeaderboardStore leaderboardStore) {
-        this.leaderboardStore = leaderboardStore;
-    }
 
     @Override
     public void update(RankingUpdate update) {

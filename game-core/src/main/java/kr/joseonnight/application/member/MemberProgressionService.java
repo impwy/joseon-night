@@ -15,9 +15,11 @@ import kr.joseonnight.domain.gameplay.CharacterType;
 import kr.joseonnight.domain.member.Member;
 import kr.joseonnight.domain.member.MemberCharacter;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class MemberProgressionService
         implements MemberProgressionFinder, MemberProgressionManager {
 
@@ -26,20 +28,6 @@ public final class MemberProgressionService
     private final CharacterCatalogFinder characterCatalogFinder;
     private final MemberValidationService validationService;
     private final Clock clock;
-
-    public MemberProgressionService(
-            MemberCharacterRepository characterRepository,
-            MemberItemRepository itemRepository,
-            CharacterCatalogFinder characterCatalogFinder,
-            MemberValidationService validationService,
-            Clock clock
-    ) {
-        this.characterRepository = characterRepository;
-        this.itemRepository = itemRepository;
-        this.characterCatalogFinder = characterCatalogFinder;
-        this.validationService = validationService;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional

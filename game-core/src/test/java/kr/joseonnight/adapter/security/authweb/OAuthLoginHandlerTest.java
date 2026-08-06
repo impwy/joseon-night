@@ -5,16 +5,21 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import kr.joseonnight.adapter.security.googleoauth.GoogleOAuthIdentityExtractor;
 import kr.joseonnight.adapter.security.googleoauth.GoogleSubjectHasher;
 import kr.joseonnight.application.member.provided.DesktopAuthentication;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
@@ -70,24 +75,46 @@ class OAuthLoginHandlerTest {
     }
 
     @Test
-    void failureStoresOnlyGenericStateAndInvalidatesBrowserSession() throws Exception {
-        DesktopAuthentication desktop = mock(DesktopAuthentication.class);
-        OAuthLoginFailureHandler handler = new OAuthLoginFailureHandler(desktop);
-        UUID attemptId = UUID.randomUUID();
-        MockHttpServletRequest request = requestWithAttempt(attemptId);
-        MockHttpSession session = (MockHttpSession) request.getSession(false);
-        MockHttpServletResponse response = new MockHttpServletResponse();
+    void failureStoresGenericStateLogsSafeCodeAndInvalidatesBrowserSession() throws Exception {
+        Logger handlerLogger = (Logger) LoggerFactory.getLogger(OAuthLoginFailureHandler.class);
+        List<ILoggingEvent> logEvents = new CopyOnWriteArrayList<>();
+        AppenderBase<ILoggingEvent> collectingAppender = new AppenderBase<>() {
+            @Override
+            protected void append(ILoggingEvent event) {
+                logEvents.add(event);
+            }
+        };
+        collectingAppender.start();
+        handlerLogger.addAppender(collectingAppender);
+        try {
+            DesktopAuthentication desktop = mock(DesktopAuthentication.class);
+            OAuthLoginFailureHandler handler = new OAuthLoginFailureHandler(desktop);
+            UUID attemptId = UUID.randomUUID();
+            MockHttpServletRequest request = requestWithAttempt(attemptId);
+            MockHttpSession session = (MockHttpSession) request.getSession(false);
+            MockHttpServletResponse response = new MockHttpServletResponse();
 
-        handler.onAuthenticationFailure(
-                request,
-                response,
-                new OAuth2AuthenticationException(new OAuth2Error("access_denied"), "private-provider-detail")
-        );
+            handler.onAuthenticationFailure(
+                    request,
+                    response,
+                    new OAuth2AuthenticationException(
+                            new OAuth2Error("access_denied"), "private-provider-detail")
+            );
 
-        verify(desktop).fail(attemptId);
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).doesNotContain("private-provider-detail");
-        assertThat(session.isInvalid()).isTrue();
+            verify(desktop).fail(attemptId);
+            assertThat(response.getStatus()).isEqualTo(401);
+            assertThat(response.getContentAsString()).doesNotContain("private-provider-detail");
+            assertThat(session.isInvalid()).isTrue();
+            assertThat(logEvents)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(message -> message.contains("errorCode=access_denied")
+                            && message.contains("exception=OAuth2AuthenticationException"))
+                    .noneMatch(message -> message.contains("private-provider-detail"));
+            assertThat(logEvents).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+        } finally {
+            handlerLogger.detachAppender(collectingAppender);
+            collectingAppender.stop();
+        }
     }
 
     private static MockHttpServletRequest requestWithAttempt(UUID attemptId) {

@@ -9,10 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import kr.joseonnight.adapter.security.googleoauth.GoogleOAuthIdentityExtractor;
 import kr.joseonnight.application.member.provided.DesktopAuthentication;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 
+@RequiredArgsConstructor
 public final class OAuthLoginSuccessHandler implements AuthenticationSuccessHandler {
 
     private static final byte[] SUCCESS_HTML = """
@@ -23,14 +25,6 @@ public final class OAuthLoginSuccessHandler implements AuthenticationSuccessHand
 
     private final DesktopAuthentication desktopAuthentication;
     private final GoogleOAuthIdentityExtractor identityExtractor;
-
-    public OAuthLoginSuccessHandler(
-            DesktopAuthentication desktopAuthentication,
-            GoogleOAuthIdentityExtractor identityExtractor
-    ) {
-        this.desktopAuthentication = desktopAuthentication;
-        this.identityExtractor = identityExtractor;
-    }
 
     @Override
     public void onAuthenticationSuccess(

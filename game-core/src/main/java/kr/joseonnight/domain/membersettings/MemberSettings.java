@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.membersettings;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,11 +10,13 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.AbstractEntity;
+import lombok.NoArgsConstructor;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "member_settings")
+@NoArgsConstructor(access = PROTECTED)
 public class MemberSettings extends AbstractEntity {
 
     private static final int DEFAULT_VOLUME = 70;
@@ -39,9 +43,6 @@ public class MemberSettings extends AbstractEntity {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    protected MemberSettings() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private MemberSettings(Long memberId, String nickname, Instant now) {

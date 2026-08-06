@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.item;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
@@ -11,12 +13,14 @@ import jakarta.persistence.Table;
 import java.util.Map;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.JsonConfiguration;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "items")
+@NoArgsConstructor(access = PROTECTED)
 public class ItemDefinition {
 
     @Id
@@ -42,9 +46,6 @@ public class ItemDefinition {
 
     @Column(nullable = false)
     private boolean enabled;
-
-    protected ItemDefinition() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private ItemDefinition(

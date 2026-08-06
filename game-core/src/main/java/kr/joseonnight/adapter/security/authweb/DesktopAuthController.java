@@ -11,6 +11,8 @@ import kr.joseonnight.application.member.provided.DesktopLoginStart;
 import kr.joseonnight.application.member.provided.DesktopRegistrationResult;
 import kr.joseonnight.application.member.provided.IssuedAccessToken;
 import kr.joseonnight.application.member.required.DesktopLoginStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,13 +26,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Validated
 @RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
+@Slf4j
 public class DesktopAuthController {
-
     private final ObjectProvider<DesktopAuthentication> authenticationProvider;
-
-    public DesktopAuthController(ObjectProvider<DesktopAuthentication> authenticationProvider) {
-        this.authenticationProvider = authenticationProvider;
-    }
 
     @PostMapping("/desktop/attempts")
     public ResponseEntity<LoginAttemptResponse> createAttempt() {
@@ -69,6 +68,8 @@ public class DesktopAuthController {
     private DesktopAuthentication authentication() {
         DesktopAuthentication authentication = authenticationProvider.getIfAvailable();
         if (authentication == null) {
+            log.warn(
+                    "Desktop authentication unavailable: required Google OAuth or JWT configuration is missing");
             throw new AuthenticationConfigurationException();
         }
         return authentication;

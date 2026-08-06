@@ -18,27 +18,17 @@ import kr.joseonnight.application.playrecord.required.PlayRecordRepository;
 import kr.joseonnight.domain.playrecord.PlayRecord;
 import kr.joseonnight.domain.playrecord.PlayOutcome;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class PlayRecordService implements PlayRecorder, PlayRecordFinder, PlayRecordRankingSource {
 
     private final PlayRecordRepository playRecordRepository;
     private final PlayRecordEventPublisher eventPublisher;
     private final MemberProgressionManager progressionManager;
     private final Clock clock;
-
-    public PlayRecordService(
-            PlayRecordRepository playRecordRepository,
-            PlayRecordEventPublisher eventPublisher,
-            MemberProgressionManager progressionManager,
-            Clock clock
-    ) {
-        this.playRecordRepository = playRecordRepository;
-        this.eventPublisher = eventPublisher;
-        this.progressionManager = progressionManager;
-        this.clock = clock;
-    }
 
     @Override
     @Transactional

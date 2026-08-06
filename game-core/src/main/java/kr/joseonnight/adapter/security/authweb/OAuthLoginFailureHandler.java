@@ -6,9 +6,14 @@ import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import kr.joseonnight.application.member.provided.DesktopAuthentication;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 
+@RequiredArgsConstructor
+@Slf4j
 public final class OAuthLoginFailureHandler implements AuthenticationFailureHandler {
 
     private static final byte[] FAILURE_HTML = """
@@ -19,10 +24,6 @@ public final class OAuthLoginFailureHandler implements AuthenticationFailureHand
 
     private final DesktopAuthentication desktopAuthentication;
 
-    public OAuthLoginFailureHandler(DesktopAuthentication desktopAuthentication) {
-        this.desktopAuthentication = desktopAuthentication;
-    }
-
     @Override
     public void onAuthenticationFailure(
             HttpServletRequest request,
@@ -31,6 +32,10 @@ public final class OAuthLoginFailureHandler implements AuthenticationFailureHand
     ) throws IOException {
         HttpSession session = request.getSession(false);
         try {
+            log.warn(
+                    "Google OAuth login failed: errorCode={}, exception={}",
+                    safeErrorCode(exception),
+                    exception.getClass().getSimpleName());
             Object value = session == null ? null : session.getAttribute(DesktopOAuthSession.ATTEMPT_ID);
             if (value instanceof java.util.UUID attemptId) {
                 desktopAuthentication.fail(attemptId);
@@ -45,5 +50,22 @@ public final class OAuthLoginFailureHandler implements AuthenticationFailureHand
                 session.invalidate();
             }
         }
+    }
+
+    private static String safeErrorCode(AuthenticationException exception) {
+        if (!(exception instanceof OAuth2AuthenticationException oauthException)) {
+            return "unknown";
+        }
+        String errorCode = oauthException.getError().getErrorCode();
+        if (errorCode == null || errorCode.isBlank() || errorCode.length() > 64) {
+            return "unknown";
+        }
+        for (int index = 0; index < errorCode.length(); index++) {
+            char value = errorCode.charAt(index);
+            if (!(value == '_' || value == '-' || value == '.' || Character.isLetterOrDigit(value))) {
+                return "invalid";
+            }
+        }
+        return errorCode;
     }
 }

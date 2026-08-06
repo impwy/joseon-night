@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.member;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -9,6 +11,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.Objects;
 import kr.joseonnight.domain.shared.AbstractEntity;
+import lombok.NoArgsConstructor;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.springframework.util.Assert;
 
@@ -26,6 +29,7 @@ import org.springframework.util.Assert;
                 )
         }
 )
+@NoArgsConstructor(access = PROTECTED)
 public class OAuthIdentity extends AbstractEntity {
 
     @Column(name = "member_id", nullable = false)
@@ -43,9 +47,6 @@ public class OAuthIdentity extends AbstractEntity {
 
     @Column(name = "last_login_at", nullable = false)
     private Instant lastLoginAt;
-
-    protected OAuthIdentity() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private OAuthIdentity(

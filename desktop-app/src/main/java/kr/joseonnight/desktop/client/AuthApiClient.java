@@ -27,6 +27,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import kr.joseonnight.desktop.authentication.AuthPhase;
 import kr.joseonnight.desktop.authentication.AuthSession;
 import kr.joseonnight.desktop.authentication.AuthState;
+import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -35,7 +37,11 @@ import tools.jackson.databind.ObjectMapper;
  * <p>All blocking aggregation and polling is confined to one daemon worker; callbacks never run on
  * the JavaFX application thread unless the view explicitly dispatches them there.</p>
  */
+@Slf4j
 public final class AuthApiClient implements AutoCloseable {
+    private static final String AUTH_CONFIGURATION_MISSING = "AUTH_CONFIGURATION_MISSING";
+    private static final String LOGIN_UNAVAILABLE_MESSAGE =
+            "현재 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.";
     static final String ATTEMPTS_PATH = "/api/v1/auth/desktop/attempts";
     static final String REGISTRATIONS_PATH = "/api/v1/auth/desktop/registrations";
     static final String LOGOUT_PATH = "/api/v1/auth/logout";
@@ -82,13 +88,14 @@ public final class AuthApiClient implements AutoCloseable {
         }
         cancelPolling();
         currentAttempt = null;
-        updateState(new AuthState(
+        AuthState startingState = new AuthState(
                 AuthPhase.STARTING_ATTEMPT,
                 "로그인 페이지를 준비하고 있습니다…",
                 null,
                 null,
-                null));
-        worker.execute(this::createAttempt);
+                null);
+        updateState(startingState);
+        worker.execute(() -> createAttempt(startingState));
     }
 
     public void registerNickname(String nickname) {
@@ -130,7 +137,12 @@ public final class AuthApiClient implements AutoCloseable {
         }
     }
 
-    private void createAttempt() {
+    private void createAttempt(AuthState expectedStartingState) {
+        if (closed.get() || state.get() != expectedStartingState) {
+            return;
+        }
+        long startedNanos = System.nanoTime();
+        log.info("Authentication operation started: operation=create-attempt");
         try {
             AggregatedHttpResponse response = request(HttpMethod.POST, ATTEMPTS_PATH, null, null);
             requireStatus(response, 200, 201);
@@ -147,15 +159,24 @@ public final class AuthApiClient implements AutoCloseable {
                     URI.create(requireText(body.authorizationUri(), "authorizationUri")),
                     deadline);
             currentAttempt = attempt;
-            updateState(new AuthState(
+            AuthState waitingState = new AuthState(
                     AuthPhase.WAITING_FOR_BROWSER,
-                    "Google 로그인을 마치면 자동으로 계속됩니다.",
+                    "브라우저에서 Google 로그인을 완료해 주세요.",
                     attempt.authorizationUri(),
                     null,
-                    null));
+                    null);
+            if (!replaceState(expectedStartingState, waitingState)) {
+                if (currentAttempt == attempt) {
+                    currentAttempt = null;
+                }
+                return;
+            }
+            log.info(
+                    "Authentication operation completed: operation=create-attempt, elapsedMs={}",
+                    elapsedMillis(startedNanos));
             scheduleNextPoll(attempt);
         } catch (Exception exception) {
-            handleFailure(exception);
+            handleFailure("create-attempt", startedNanos, exception, expectedStartingState);
         }
     }
 
@@ -181,6 +202,7 @@ public final class AuthApiClient implements AutoCloseable {
             expireAttempt();
             return;
         }
+        long startedNanos = System.nanoTime();
         try {
             String path = ATTEMPTS_PATH + "/" + encodePath(attempt.attemptId()) + "/exchange";
             AggregatedHttpResponse response = request(
@@ -207,14 +229,18 @@ public final class AuthApiClient implements AutoCloseable {
                             requireText(body.registrationTicket(), "registrationTicket"),
                             null));
                 }
+                case "FAILED" -> failAttempt();
+                case "EXPIRED", "EXCHANGED" -> expireAttempt();
                 default -> throw new IOException("unsupported authentication status: " + exchangeStatus);
             }
-        } catch (Exception exception) {
-            handleFailure(exception);
+        } catch (IOException | InterruptedException | RuntimeException exception) {
+            handleFailure("exchange-attempt", startedNanos, exception);
         }
     }
 
     private void completeRegistration(String registrationTicket, String nickname) {
+        long startedNanos = System.nanoTime();
+        log.info("Authentication operation started: operation=register-nickname");
         try {
             AggregatedHttpResponse response = request(
                     HttpMethod.POST,
@@ -225,12 +251,16 @@ public final class AuthApiClient implements AutoCloseable {
             RegistrationResponse body = objectMapper.readValue(
                     response.contentUtf8(), RegistrationResponse.class);
             authenticate(body.accessToken(), body.expiresAt());
+            log.info(
+                    "Authentication operation completed: operation=register-nickname, elapsedMs={}",
+                    elapsedMillis(startedNanos));
         } catch (Exception exception) {
-            handleFailure(exception);
+            handleFailure("register-nickname", startedNanos, exception);
         }
     }
 
     private void revokeAccessToken(String accessToken) {
+        long startedNanos = System.nanoTime();
         try {
             AggregatedHttpResponse response = request(
                     HttpMethod.POST,
@@ -241,8 +271,8 @@ public final class AuthApiClient implements AutoCloseable {
             requireStatus(response, 200, 204);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-        } catch (IOException ignored) {
-            // Local logout is immediate; a failed best-effort revocation expires with the short JWT.
+        } catch (IOException exception) {
+            logFailure("revoke-access-token", startedNanos, exception);
         }
     }
 
@@ -275,34 +305,62 @@ public final class AuthApiClient implements AutoCloseable {
         try {
             return webClient.execute(HttpRequest.of(headers.build(), content)).aggregate().get();
         } catch (ExecutionException exception) {
-            throw new IOException("authentication API request failed", exception.getCause());
+            throw new AuthenticationTransportException(exception.getCause());
         }
     }
 
-    private void handleFailure(Exception exception) {
-        currentAttempt = null;
-        cancelPolling();
+    private void handleFailure(String operation, long startedNanos, Exception exception) {
+        handleFailure(operation, startedNanos, exception, null);
+    }
+
+    private void handleFailure(
+            String operation,
+            long startedNanos,
+            Exception exception,
+            AuthState expectedState
+    ) {
+        if (exception instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+            if (closed.get()) {
+                return;
+            }
+        }
         AuthPhase phase;
-        String message;
+        String userMessage;
         if (exception instanceof RestStatusException statusException) {
             phase = switch (statusException.statusCode()) {
                 case 401 -> AuthPhase.EXPIRED;
                 case 403 -> AuthPhase.FORBIDDEN;
                 default -> AuthPhase.FAILED;
             };
-            message = switch (phase) {
-                case EXPIRED -> "로그인 시간이 만료되었습니다. 다시 시도해 주세요.";
-                case FORBIDDEN -> "이 계정으로는 게임에 접속할 수 없습니다.";
-                default -> "로그인 서버가 요청을 처리하지 못했습니다.";
-            };
-        } else if (exception instanceof IOException) {
+            if (AUTH_CONFIGURATION_MISSING.equals(statusException.errorCode())) {
+                userMessage = LOGIN_UNAVAILABLE_MESSAGE;
+            } else {
+                userMessage = switch (phase) {
+                    case EXPIRED -> "로그인 시간이 만료되었습니다. 다시 시도해 주세요.";
+                    case FORBIDDEN -> "이 계정으로는 게임에 접속할 수 없습니다.";
+                    default -> LOGIN_UNAVAILABLE_MESSAGE;
+                };
+            }
+        } else if (exception instanceof AuthenticationTransportException) {
             phase = AuthPhase.OFFLINE;
-            message = "로그인 서버에 연결할 수 없습니다.";
+            userMessage = "로그인 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.";
         } else {
             phase = AuthPhase.FAILED;
-            message = "로그인을 완료하지 못했습니다.";
+            userMessage = LOGIN_UNAVAILABLE_MESSAGE;
         }
-        updateState(new AuthState(phase, message, null, null, null));
+        AuthState failureState = new AuthState(phase, userMessage, null, null, null);
+        if (expectedState != null) {
+            if (!replaceState(expectedState, failureState)) {
+                return;
+            }
+            logFailure(operation, startedNanos, exception);
+            return;
+        }
+        logFailure(operation, startedNanos, exception);
+        currentAttempt = null;
+        cancelPolling();
+        updateState(failureState);
     }
 
     private void expireAttempt() {
@@ -316,16 +374,47 @@ public final class AuthApiClient implements AutoCloseable {
                 null));
     }
 
+    private void failAttempt() {
+        currentAttempt = null;
+        cancelPolling();
+        updateState(new AuthState(
+                AuthPhase.FAILED,
+                "Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.",
+                null,
+                null,
+                null));
+    }
+
     private void updateState(AuthState newState) {
-        state.set(Objects.requireNonNull(newState, "newState"));
+        AuthState next = Objects.requireNonNull(newState, "newState");
+        AuthState previous = state.getAndSet(next);
+        publishStateChange(previous, next);
+    }
+
+    private boolean replaceState(AuthState expectedState, AuthState newState) {
+        AuthState expected = Objects.requireNonNull(expectedState, "expectedState");
+        AuthState next = Objects.requireNonNull(newState, "newState");
+        if (!state.compareAndSet(expected, next)) {
+            return false;
+        }
+        publishStateChange(expected, next);
+        return true;
+    }
+
+    private void publishStateChange(AuthState previous, AuthState next) {
+        if (previous.phase() != next.phase()) {
+            log.info("Authentication phase changed: {} -> {}", previous.phase(), next.phase());
+        }
         notifyStateChanged();
     }
 
     private void notifyStateChanged() {
         try {
             stateListener.run();
-        } catch (RuntimeException ignored) {
-            // A presentation callback must never stop authentication polling.
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Authentication state listener failed: exception={}",
+                    exception.getClass().getSimpleName());
         }
     }
 
@@ -337,7 +426,7 @@ public final class AuthApiClient implements AutoCloseable {
         }
     }
 
-    private static void requireStatus(AggregatedHttpResponse response, int... acceptedStatuses)
+    private void requireStatus(AggregatedHttpResponse response, int... acceptedStatuses)
             throws RestStatusException {
         int actual = response.status().code();
         for (int accepted : acceptedStatuses) {
@@ -345,7 +434,17 @@ public final class AuthApiClient implements AutoCloseable {
                 return;
             }
         }
-        throw new RestStatusException(actual);
+        throw new RestStatusException(actual, responseErrorCode(response));
+    }
+
+    private String responseErrorCode(AggregatedHttpResponse response) {
+        try {
+            ErrorResponse errorResponse = objectMapper.readValue(
+                    response.contentUtf8(), ErrorResponse.class);
+            return errorResponse == null ? null : errorResponse.code();
+        } catch (JacksonException exception) {
+            return null;
+        }
     }
 
     private static Duration requirePositive(Duration duration, String name) {
@@ -369,6 +468,51 @@ public final class AuthApiClient implements AutoCloseable {
 
     private static String encodePath(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static long elapsedMillis(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private static void logFailure(String operation, long startedNanos, Exception exception) {
+        if (exception instanceof RestStatusException statusException) {
+            log.warn(
+                    "Authentication operation failed: operation={}, httpStatus={}, errorCode={},"
+                            + " elapsedMs={}, exception={}",
+                    operation,
+                    statusException.statusCode(),
+                    safeErrorCode(statusException.errorCode()),
+                    elapsedMillis(startedNanos),
+                    exception.getClass().getSimpleName());
+            return;
+        }
+        log.warn(
+                "Authentication operation failed: operation={}, elapsedMs={}, exception={}, rootCause={}",
+                operation,
+                elapsedMillis(startedNanos),
+                exception.getClass().getSimpleName(),
+                deepestCauseType(exception));
+    }
+
+    private static String safeErrorCode(String errorCode) {
+        if (errorCode == null || errorCode.isBlank() || errorCode.length() > 64) {
+            return "none";
+        }
+        for (int index = 0; index < errorCode.length(); index++) {
+            char value = errorCode.charAt(index);
+            if (!(value == '_' || value == '-' || Character.isLetterOrDigit(value))) {
+                return "invalid";
+            }
+        }
+        return errorCode;
+    }
+
+    private static String deepestCauseType(Throwable throwable) {
+        Throwable deepest = throwable;
+        for (int depth = 0; depth < 16 && deepest.getCause() != null; depth++) {
+            deepest = deepest.getCause();
+        }
+        return deepest == throwable ? "none" : deepest.getClass().getSimpleName();
     }
 
     private record LoginAttempt(
@@ -404,18 +548,36 @@ public final class AuthApiClient implements AutoCloseable {
     private record RegistrationResponse(String accessToken, String expiresAt) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ErrorResponse(String code) {
+    }
+
     private static final class RestStatusException extends IOException {
         private static final long serialVersionUID = 1L;
 
         private final int statusCode;
+        private final String errorCode;
 
-        private RestStatusException(int statusCode) {
+        private RestStatusException(int statusCode, String errorCode) {
             super("authentication API returned HTTP " + statusCode);
             this.statusCode = statusCode;
+            this.errorCode = errorCode;
         }
 
         private int statusCode() {
             return statusCode;
+        }
+
+        private String errorCode() {
+            return errorCode;
+        }
+    }
+
+    private static final class AuthenticationTransportException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        private AuthenticationTransportException(Throwable cause) {
+            super("authentication API transport failed", cause);
         }
     }
 }

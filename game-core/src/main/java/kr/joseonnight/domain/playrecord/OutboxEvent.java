@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.playrecord;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,11 +10,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
+import lombok.NoArgsConstructor;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "outbox_events")
+@NoArgsConstructor(access = PROTECTED)
 public class OutboxEvent {
 
     @Id
@@ -40,9 +44,6 @@ public class OutboxEvent {
 
     @Column(name = "published_at")
     private Instant publishedAt;
-
-    protected OutboxEvent() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private OutboxEvent(

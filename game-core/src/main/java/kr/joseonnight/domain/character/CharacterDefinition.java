@@ -1,15 +1,19 @@
 package kr.joseonnight.domain.character;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.Objects;
+import lombok.NoArgsConstructor;
 import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "characters")
+@NoArgsConstructor(access = PROTECTED)
 public class CharacterDefinition {
 
     @Id
@@ -33,9 +37,6 @@ public class CharacterDefinition {
 
     @Column(nullable = false)
     private boolean enabled;
-
-    protected CharacterDefinition() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private CharacterDefinition(

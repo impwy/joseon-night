@@ -12,20 +12,14 @@ import kr.joseonnight.application.ranking.required.LeaderboardStore;
 import kr.joseonnight.application.ranking.required.LeaderboardUnavailableException;
 import kr.joseonnight.domain.ranking.RankingMetric;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class RankingService implements RankingFinder {
 
     private final PlayRecordRankingSource playRecordRankingSource;
     private final LeaderboardStore leaderboardStore;
-
-    public RankingService(
-            PlayRecordRankingSource playRecordRankingSource,
-            LeaderboardStore leaderboardStore
-    ) {
-        this.playRecordRankingSource = playRecordRankingSource;
-        this.leaderboardStore = leaderboardStore;
-    }
 
     @Override
     public List<RankingEntry> top(RankingMetric metric, int limit) {

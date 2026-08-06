@@ -6,15 +6,13 @@ import kr.joseonnight.application.member.provided.GameSocketTicketConsumer;
 import kr.joseonnight.application.member.provided.GameSocketTicketIssuer;
 import kr.joseonnight.application.member.required.GameSocketTicketStore;
 import kr.joseonnight.support.stereotype.ValidatedApplicationService;
+import lombok.RequiredArgsConstructor;
 
 @ValidatedApplicationService
+@RequiredArgsConstructor
 public final class GameSocketTicketService implements GameSocketTicketIssuer, GameSocketTicketConsumer {
 
     private final GameSocketTicketStore ticketStore;
-
-    public GameSocketTicketService(GameSocketTicketStore ticketStore) {
-        this.ticketStore = ticketStore;
-    }
 
     @Override
     public GameSocketTicket issue(Long memberId) {

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.Objects;
 import kr.joseonnight.application.member.provided.DesktopAuthentication;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.validation.annotation.Validated;
@@ -19,15 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Validated
 @RequestMapping("/api/v1/auth/desktop")
+@RequiredArgsConstructor
 public class DesktopOAuthAuthorizationApi {
 
     private final ObjectProvider<DesktopAuthentication> authenticationProvider;
-
-    public DesktopOAuthAuthorizationApi(
-            ObjectProvider<DesktopAuthentication> authenticationProvider
-    ) {
-        this.authenticationProvider = authenticationProvider;
-    }
 
     @GetMapping("/authorize")
     public void authorize(

@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.member;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -7,12 +9,14 @@ import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
+import lombok.NoArgsConstructor;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "member_items")
 @IdClass(MemberItemId.class)
+@NoArgsConstructor(access = PROTECTED)
 public class MemberItem {
 
     @Id
@@ -25,9 +29,6 @@ public class MemberItem {
 
     @Column(name = "unlocked_at", nullable = false)
     private Instant unlockedAt;
-
-    protected MemberItem() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private MemberItem(Long memberId, String itemId, Instant unlockedAt) {

@@ -38,10 +38,9 @@ import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.gameplay.GameSnapshot;
 import kr.joseonnight.desktop.gameplay.InputState;
 import kr.joseonnight.desktop.gameplay.UpgradeType;
+import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -51,8 +50,8 @@ import tools.jackson.databind.ObjectMapper;
  * <p>A short-lived socket ticket is requested with the memory-only bearer JWT. The opaque ticket
  * is then sent in the WebSocket {@code Authorization: Ticket ...} header and never in a URL.</p>
  */
+@Slf4j
 public final class DesktopApiClient implements AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DesktopApiClient.class);
     static final String SOCKET_TICKETS_PATH = "/api/v1/game/socket-tickets";
     private static final Duration RECONNECT_DELAY = Duration.ofSeconds(1);
     private static final Duration RECONNECT_WINDOW = Duration.ofSeconds(30);
@@ -425,7 +424,7 @@ public final class DesktopApiClient implements AutoCloseable {
             return;
         }
         outbound = null;
-        LOGGER.warn(
+        log.warn(
                 "Game WebSocket {} failed: {}",
                 reconnectSessionId == null ? "initial connection" : "reconnection",
                 exception.getClass().getSimpleName());
@@ -454,7 +453,7 @@ public final class DesktopApiClient implements AutoCloseable {
         outbound = null;
         String reconnectSessionId = currentSessionId;
         boolean reconnectable = reconnectSessionId != null && isReconnectable(latestSnapshot.get());
-        LOGGER.warn(
+        log.warn(
                 "Game WebSocket closed unexpectedly: {}",
                 cause == null ? "peer completed the stream" : cause.getClass().getSimpleName());
         if (reconnectable) {

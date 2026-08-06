@@ -1,5 +1,7 @@
 package kr.joseonnight.domain.playrecord;
 
+import static lombok.AccessLevel.PROTECTED;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import kr.joseonnight.domain.shared.AbstractEntity;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -17,6 +20,7 @@ import org.springframework.util.Assert;
 
 @Entity
 @Table(name = "play_records")
+@NoArgsConstructor(access = PROTECTED)
 public class PlayRecord extends AbstractEntity {
 
     @Column(name = "game_session", nullable = false, unique = true)
@@ -53,9 +57,6 @@ public class PlayRecord extends AbstractEntity {
 
     @Column(name = "ranking_eligible", nullable = false)
     private boolean rankingEligible;
-
-    protected PlayRecord() {
-    }
 
     @SuppressFBWarnings(value = "CT_CONSTRUCTOR_THROW", justification = "JPA entity factory validates required state")
     private PlayRecord(

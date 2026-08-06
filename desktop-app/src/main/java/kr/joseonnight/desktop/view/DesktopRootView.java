@@ -171,15 +171,11 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         loginProgress.setManaged(false);
         HBox progressRow = new HBox(10, loginProgress, loginMessage);
         progressRow.setAlignment(Pos.CENTER);
-        Label privacy = bodyLabel();
-        privacy.setText("이메일·이름·프로필 사진은 저장하지 않습니다.\n로그인 식별값은 보호된 값으로만 보관합니다.");
-        privacy.setStyle("-fx-font-size: 13px; -fx-text-fill: #8fa2b7;");
-        privacy.setMaxWidth(430);
         loginButton.setOnAction(ignored -> {
             openedAuthorizationUri = null;
             authApiClient.beginLogin();
         });
-        loginPane.getChildren().addAll(eyebrow, title, subtitle, divider, progressRow, loginButton, privacy);
+        loginPane.getChildren().addAll(eyebrow, title, subtitle, divider, progressRow, loginButton);
     }
 
     private void configureRegistrationPane() {
@@ -274,9 +270,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         AuthState state = authApiClient.state();
         boolean loginInProgress = state.phase() == AuthPhase.STARTING_ATTEMPT
                 || state.phase() == AuthPhase.WAITING_FOR_BROWSER;
-        loginMessage.setText(state.phase() == AuthPhase.WAITING_FOR_BROWSER
-                ? "브라우저에서 Google 로그인을 완료해 주세요."
-                : state.message());
+        loginMessage.setText(state.userMessage());
         loginButton.setDisable(loginInProgress);
         loginButton.setText(GOOGLE_LOGIN_BUTTON_TEXT);
         loginProgress.setVisible(loginInProgress);

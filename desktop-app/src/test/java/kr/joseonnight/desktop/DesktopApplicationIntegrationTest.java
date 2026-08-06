@@ -48,6 +48,8 @@ import kr.joseonnight.desktop.member.MemberBootstrap;
 import kr.joseonnight.desktop.settings.AudioSettings;
 import kr.joseonnight.desktop.settings.TargetFps;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 import org.slf4j.LoggerFactory;
@@ -117,6 +119,185 @@ class DesktopApplicationIntegrationTest {
                         .contains("\"registrationTicket\":\"registration-ticket\"")
                         .contains("\"nickname\":\"달빛사냥꾼\"");
             });
+        }
+    }
+
+    @Test
+    void authenticationConfigurationFailureShowsSafeMessageAndLogsCodeWithoutSecrets() throws Exception {
+        Logger clientLogger = (Logger) LoggerFactory.getLogger(AuthApiClient.class);
+        List<ILoggingEvent> logEvents = new CopyOnWriteArrayList<>();
+        AppenderBase<ILoggingEvent> collectingAppender = new AppenderBase<>() {
+            @Override
+            protected void append(ILoggingEvent event) {
+                logEvents.add(event);
+            }
+        };
+        collectingAppender.start();
+        clientLogger.addAppender(collectingAppender);
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     webClient(backend, factory),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            backend.respondToAuthAttempt(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "{\"code\":\"AUTH_CONFIGURATION_MISSING\","
+                            + "\"message\":\"Desktop authentication is not configured\","
+                            + "\"sensitive\":\"poll-secret\"}");
+
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.FAILED);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("현재 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+            assertThat(logEvents)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(message -> message.contains("create-attempt")
+                            && message.contains("httpStatus=503")
+                            && message.contains("errorCode=AUTH_CONFIGURATION_MISSING"))
+                    .noneMatch(message -> message.contains("poll-secret"));
+            assertThat(logEvents).allSatisfy(event -> {
+                assertThat(event.getThrowableProxy()).isNull();
+                assertThat(event.getMDCPropertyMap()).isEmpty();
+            });
+        } finally {
+            clientLogger.detachAppender(collectingAppender);
+            collectingAppender.stop();
+        }
+    }
+
+    @Test
+    void genericServiceUnavailableDoesNotClaimAuthenticationIsMisconfigured() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     webClient(backend, factory),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            backend.respondToAuthAttempt(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "{\"code\":\"SERVICE_UNAVAILABLE\"}");
+
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.FAILED);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("현재 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+        }
+    }
+
+    @Test
+    void malformedAttemptResponseIsAProtocolFailureRatherThanOffline() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     webClient(backend, factory),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            backend.respondToAuthAttempt(HttpStatus.CREATED, "{\"attemptId\":");
+
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.FAILED);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("현재 로그인할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+        }
+    }
+
+    @Test
+    void unresponsiveAuthenticationServerIsReportedAsOffline() throws Exception {
+        try (ServerSocket unresponsiveServer = new ServerSocket(
+                0, 1, InetAddress.getLoopbackAddress());
+             ClientFactory factory = clientFactory(Duration.ofMillis(100));
+             AuthApiClient auth = new AuthApiClient(
+                     WebClient.builder("http://127.0.0.1:" + unresponsiveServer.getLocalPort())
+                             .factory(factory)
+                             .responseTimeout(Duration.ofMillis(200))
+                             .build(),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.OFFLINE);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("로그인 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.");
+        }
+    }
+
+    @Test
+    void failedProviderLoginOffersAUserFacingRetry() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     webClient(backend, factory),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            backend.respondToAuthExchange("FAILED");
+
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.FAILED);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("Google 로그인을 완료하지 못했습니다. 다시 시도해 주세요.");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EXPIRED", "EXCHANGED"})
+    void unusableCompletedLoginAttemptRequestsANewLogin(String exchangeStatus) throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     webClient(backend, factory),
+                     new ObjectMapper(),
+                     Duration.ofMillis(20),
+                     Duration.ofSeconds(2))) {
+            backend.respondToAuthExchange(exchangeStatus);
+
+            auth.beginLogin();
+            await(() -> auth.state().phase() == AuthPhase.EXPIRED);
+
+            assertThat(auth.state().userMessage())
+                    .isEqualTo("로그인 시간이 만료되었습니다. 다시 시도해 주세요.");
+        }
+    }
+
+    @Test
+    void retryIgnoresThePreviousAttemptResponse() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             AuthApiClient auth = new AuthApiClient(
+                     WebClient.builder(backend.baseUrl())
+                             .factory(factory)
+                             .responseTimeout(Duration.ofSeconds(2))
+                             .build(),
+                     new ObjectMapper(),
+                     Duration.ofSeconds(5),
+                     Duration.ofSeconds(10))) {
+            List<URI> openedAuthorizationUris = new CopyOnWriteArrayList<>();
+            auth.setStateListener(() -> {
+                URI authorizationUri = auth.state().authorizationUri();
+                if (authorizationUri != null) {
+                    openedAuthorizationUris.add(authorizationUri);
+                }
+            });
+            backend.respondToSequencedAuthAttempts();
+
+            auth.beginLogin();
+            await(() -> backend.authAttemptRequests.get() == 1);
+            auth.beginLogin();
+            backend.releaseFirstAuthAttempt();
+            await(() -> openedAuthorizationUris.contains(
+                    URI.create("https://accounts.example.test/login/2")));
+
+            assertThat(openedAuthorizationUris)
+                    .containsExactly(URI.create("https://accounts.example.test/login/2"));
         }
     }
 
@@ -373,10 +554,20 @@ class DesktopApplicationIntegrationTest {
         private final List<String> reconnectSessionIds = new CopyOnWriteArrayList<>();
         private final AtomicReference<String> socketAuthorization = new AtomicReference<>();
         private final AtomicInteger exchanges = new AtomicInteger();
+        private final AtomicInteger authAttemptRequests = new AtomicInteger();
         private final AtomicInteger socketConnections = new AtomicInteger();
         private final AtomicInteger ticketRequests = new AtomicInteger();
         private final AtomicInteger cancelledHandshakes = new AtomicInteger();
         private final AtomicReference<Socket> stalledHandshakeConnection = new AtomicReference<>();
+        private final CompletableFuture<Void> firstAuthAttemptRelease = new CompletableFuture<>();
+        private volatile HttpStatus authAttemptStatus = HttpStatus.CREATED;
+        private volatile boolean sequencedAuthAttempts;
+        private volatile String authExchangeStatus;
+        private volatile String authAttemptBody = """
+                {"attemptId":"attempt-1","pollToken":"poll-secret",
+                 "authorizationUri":"https://accounts.example.test/login",
+                 "expiresAt":"2099-01-01T00:00:00Z"}
+                """;
         private final ServerSocket stalledHandshakeServer;
         private final Server server;
 
@@ -430,6 +621,23 @@ class DesktopApplicationIntegrationTest {
                     request.method().equals(method) && request.path().equals(path));
         }
 
+        private void respondToAuthAttempt(HttpStatus status, String body) {
+            authAttemptStatus = status;
+            authAttemptBody = body;
+        }
+
+        private void respondToSequencedAuthAttempts() {
+            sequencedAuthAttempts = true;
+        }
+
+        private void respondToAuthExchange(String status) {
+            authExchangeStatus = status;
+        }
+
+        private void releaseFirstAuthAttempt() {
+            firstAuthAttemptRelease.complete(null);
+        }
+
         private long countRestRequests(String method, String path) {
             return requests.stream().filter(request ->
                     request.method().equals(method) && request.path().equals(path)).count();
@@ -474,13 +682,23 @@ class DesktopApplicationIntegrationTest {
             requests.add(new RecordedRequest(request.method().name(), path, request.contentUtf8(), authorization));
 
             if (path.equals("/api/v1/auth/desktop/attempts")) {
-                return json(HttpStatus.CREATED, """
-                        {"attemptId":"attempt-1","pollToken":"poll-secret",
-                         "authorizationUri":"https://accounts.example.test/login",
-                         "expiresAt":"2099-01-01T00:00:00Z"}
-                        """);
+                if (sequencedAuthAttempts) {
+                    int requestNumber = authAttemptRequests.incrementAndGet();
+                    HttpResponse response = json(HttpStatus.CREATED, """
+                            {"attemptId":"attempt-__NUMBER__","pollToken":"poll-secret-__NUMBER__",
+                             "authorizationUri":"https://accounts.example.test/login/__NUMBER__",
+                             "expiresAt":"2099-01-01T00:00:00Z"}
+                            """.replace("__NUMBER__", Integer.toString(requestNumber)));
+                    return requestNumber == 1
+                            ? HttpResponse.of(firstAuthAttemptRelease.thenApply(ignored -> response))
+                            : response;
+                }
+                return json(authAttemptStatus, authAttemptBody);
             }
             if (path.equals("/api/v1/auth/desktop/attempts/attempt-1/exchange")) {
+                if (authExchangeStatus != null) {
+                    return json(HttpStatus.OK, "{\"status\":\"" + authExchangeStatus + "\"}");
+                }
                 if (exchanges.getAndIncrement() == 0) {
                     return json(HttpStatus.ACCEPTED, "{\"status\":\"PENDING\"}");
                 }

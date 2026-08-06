@@ -7,26 +7,20 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import kr.joseonnight.application.member.required.AccessTokenBlocklist;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+@RequiredArgsConstructor
 public final class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenService tokenService;
     private final AccessTokenBlocklist blocklist;
-
-    public JwtAuthenticationFilter(
-            JwtTokenService tokenService,
-            AccessTokenBlocklist blocklist
-    ) {
-        this.tokenService = tokenService;
-        this.blocklist = blocklist;
-    }
 
     @Override
     protected void doFilterInternal(
