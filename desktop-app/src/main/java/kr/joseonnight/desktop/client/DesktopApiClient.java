@@ -62,6 +62,7 @@ public final class DesktopApiClient implements AutoCloseable {
     private static final int MIN_VIEWPORT_HEIGHT = 360;
     static final int MAX_VIEWPORT_WIDTH = 3840;
     static final int MAX_VIEWPORT_HEIGHT = 2160;
+    private static final int MAX_GAME_FRAME_PAYLOAD_LENGTH = 256 * 1024;
 
     private final WebClient restClient;
     private final ClientFactory clientFactory;
@@ -316,6 +317,7 @@ public final class DesktopApiClient implements AutoCloseable {
             AtomicReference<ClientRequestContext> handshakeContext = new AtomicReference<>();
             WebSocketClient socketClient = WebSocketClient.builder(baseUri)
                     .factory(clientFactory)
+                    .maxFramePayloadLength(MAX_GAME_FRAME_PAYLOAD_LENGTH)
                     .contextCustomizer(handshakeContext::set)
                     .build();
             HttpHeaders headers = HttpHeaders.of(

@@ -26,6 +26,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -64,6 +65,8 @@ class DesktopApplicationIntegrationTest {
             "\\\"commandSequence\\\":(\\d+)");
     private static final Duration REST_RESPONSE_TIMEOUT = Duration.ofMillis(400);
     private static final Duration SOCKET_STABILITY_WINDOW = Duration.ofMillis(2_400);
+    private static final int ARMERIA_DEFAULT_MAX_FRAME_PAYLOAD_LENGTH = 65_535;
+    private static final int GAME_MAX_FRAME_PAYLOAD_LENGTH = 256 * 1024;
 
     @Test
     void springDesktopContextContainsClientsButNoEmbeddedServer() {
@@ -411,6 +414,33 @@ class DesktopApplicationIntegrationTest {
     }
 
     @Test
+    void gameSocketReceivesLargeGameSnapshotWithoutReconnecting() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             DesktopApiClient game = new DesktopApiClient(
+                     webClient(backend, factory),
+                     factory,
+                     new ObjectMapper())) {
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
+            await(() -> game.snapshot().phase() == GamePhase.RUNNING);
+
+            String largeSnapshot = backend.publishMaximumEntitySnapshot();
+            assertThat(largeSnapshot.getBytes(StandardCharsets.UTF_8).length)
+                    .isGreaterThan(ARMERIA_DEFAULT_MAX_FRAME_PAYLOAD_LENGTH)
+                    .isLessThan(GAME_MAX_FRAME_PAYLOAD_LENGTH);
+
+            await(() -> game.snapshot().enemies().size() == 286);
+            assertThat(game.snapshot().projectiles()).hasSize(160);
+            assertThat(game.snapshot().soulFlames()).hasSize(300);
+            assertThat(game.status().state()).isEqualTo(DesktopApiStatus.State.ONLINE);
+
+            Thread.sleep(1_200L);
+            assertThat(backend.socketConnections.get()).isEqualTo(1);
+            assertThat(backend.ticketRequests.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void gameSocketStaysOpenBeyondRestResponseTimeoutWithoutAnotherTicket() throws Exception {
         assertThat(SOCKET_STABILITY_WINDOW)
                 .isGreaterThanOrEqualTo(REST_RESPONSE_TIMEOUT.multipliedBy(5));
@@ -749,6 +779,19 @@ class DesktopApplicationIntegrationTest {
             socketWriters.getLast().tryWrite(snapshotEnvelope("LEVEL_UP", 2L));
         }
 
+        private String publishMaximumEntitySnapshot() {
+            String snapshot = snapshotEnvelope("RUNNING", 2L)
+                    .replace("\"killCount\":0", "\"killCount\":286")
+                    .replace("\"enemies\":[]", "\"enemies\":"
+                            + entities(286, "shadow-dokkaebi"))
+                    .replace("\"projectiles\":[]", "\"projectiles\":"
+                            + entities(160, "seal-talisman"))
+                    .replace("\"soulFlames\":[]", "\"soulFlames\":"
+                            + entities(300, "soul-flame"));
+            socketWriters.getLast().tryWrite(snapshot);
+            return snapshot;
+        }
+
         private void dropGameSocket() {
             socketWriters.getLast().close();
         }
@@ -917,6 +960,22 @@ class DesktopApplicationIntegrationTest {
                     .replace("__SEQUENCE__", Long.toString(sequence))
                     .replace("__PHASE__", phase)
                     .replace("__LEVEL_UP_OPTIONS__", levelUpOptions);
+        }
+
+        private static String entities(int count, String kindId) {
+            StringBuilder json = new StringBuilder("[");
+            for (int index = 0; index < count; index++) {
+                if (index > 0) {
+                    json.append(',');
+                }
+                json.append("{\"id\":")
+                        .append(index + 10L)
+                        .append(",\"x\":1234.56789,\"y\":-987.654321,")
+                        .append("\"radius\":17.0,\"rotationDegrees\":359.99,\"kindId\":\"")
+                        .append(kindId)
+                        .append("\"}");
+            }
+            return json.append(']').toString();
         }
     }
 
