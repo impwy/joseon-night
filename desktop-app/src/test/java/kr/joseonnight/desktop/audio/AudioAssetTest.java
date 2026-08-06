@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 import java.util.List;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -54,6 +55,19 @@ class AudioAssetTest {
                 .map(java.util.Map.Entry::getValue)
                 .toList();
         assertThat(attackPaths).hasSize(12).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void importantEffectsHavePriorityOverAttackEffects() {
+        assertThat(List.of(
+                SoundCue.GUARD,
+                SoundCue.LEVEL_UP,
+                SoundCue.CHEST_OPENED,
+                SoundCue.DEFEAT))
+                .allSatisfy(cue -> assertThat(GameAudioService.effectPriority(cue)).isEqualTo(100));
+        Arrays.stream(SoundCue.values())
+                .filter(cue -> cue.name().endsWith("_ATTACK"))
+                .forEach(cue -> assertThat(GameAudioService.effectPriority(cue)).isZero());
     }
 
     private static void inspect(AssetExpectation expectation)

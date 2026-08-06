@@ -8,11 +8,10 @@ class GameValueInvariantTest {
 
     @Test
     void gameRulesRequireFiniteValuesAndPositiveCapacities() {
-        assertThatThrownBy(() -> rulesWithDuration(Double.NaN))
+        assertThatThrownBy(() -> rulesWithPlayerSpeed(Double.NaN))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("durationSeconds");
+                .hasMessageContaining("playerSpeed");
         assertThatThrownBy(() -> new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 760.0,
@@ -42,10 +41,9 @@ class GameValueInvariantTest {
                 .hasMessageContaining("positive");
     }
 
-    private static GameRules rulesWithDuration(double durationSeconds) {
+    private static GameRules rulesWithPlayerSpeed(double playerSpeed) {
         return new GameRules(
-                durationSeconds,
-                240.0,
+                playerSpeed,
                 18.0,
                 760.0,
                 0.75,

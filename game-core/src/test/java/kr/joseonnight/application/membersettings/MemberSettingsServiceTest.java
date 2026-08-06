@@ -47,7 +47,7 @@ class MemberSettingsServiceTest {
         MemberSettingsView created = settingsCreator.create(member.getId(), "야행꾼");
 
         assertThat(created.muted()).isFalse();
-        assertThat(created.musicVolume()).isEqualTo(70);
+        assertThat(created.musicVolume()).isEqualTo(60);
         assertThat(created.effectsVolume()).isEqualTo(70);
         assertThat(created.targetFps()).isEqualTo(TargetFps.FPS_60);
         entityManager.flush();

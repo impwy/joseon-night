@@ -126,7 +126,6 @@ class GameSessionLightningAttackTest {
 
     private static GameRules lightningRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 200.0,

@@ -5,7 +5,6 @@ public enum SoundCue {
     LEVEL_UP,
     GUARD,
     CHEST_OPENED,
-    VICTORY,
     DEFEAT,
     SEAL_TALISMAN_ATTACK,
     FLAME_FAN_ATTACK,

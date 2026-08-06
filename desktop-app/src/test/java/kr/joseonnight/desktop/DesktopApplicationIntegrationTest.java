@@ -342,6 +342,21 @@ class DesktopApplicationIntegrationTest {
     }
 
     @Test
+    void missingAndLegacySettingsKeepTheirIntendedVolumeDefaults() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             MemberApiClient members = new MemberApiClient(webClient(backend, factory), new ObjectMapper())) {
+            backend.respondToSettings("{\"muted\":false}");
+            assertThat(members.loadSettings("jwt-token").get(2, TimeUnit.SECONDS))
+                    .isEqualTo(AudioSettings.defaults());
+
+            backend.respondToSettings("{\"muted\":false,\"masterVolume\":42}");
+            assertThat(members.loadSettings("jwt-token").get(2, TimeUnit.SECONDS))
+                    .isEqualTo(new AudioSettings(false, 42, 42, TargetFps.FPS_60));
+        }
+    }
+
+    @Test
     void armeriaGameSocketUsesTicketHeaderAndExchangesTypedMessages() throws Exception {
         try (MockPlatform backend = new MockPlatform();
              ClientFactory factory = clientFactory();
@@ -349,13 +364,14 @@ class DesktopApplicationIntegrationTest {
                      webClient(backend, factory),
                      factory,
                      new ObjectMapper())) {
-            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER");
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER", 960, 540);
             await(() -> game.snapshot().phase() == GamePhase.RUNNING);
 
             assertThat(game.status().state()).isEqualTo(DesktopApiStatus.State.ONLINE);
             assertThat(backend.socketAuthorization.get()).isEqualTo("Ticket opaque-ticket");
             assertThat(game.snapshot().characterId()).isEqualTo("DOKKAEBI_HUNTER");
             assertThat(game.snapshot().barrierAvailable()).isTrue();
+            assertThat(game.snapshot().paused()).isFalse();
             assertThat(game.snapshot().occupiedItemSlots()).isEqualTo(1);
             assertThat(game.snapshot().itemSlots().getFirst().displayName()).isEqualTo("봉인 부적");
             assertThat(game.snapshot().chests()).hasSize(1);
@@ -376,7 +392,9 @@ class DesktopApplicationIntegrationTest {
 
             assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
                     .contains("\"type\":\"START_GAME\"")
-                    .contains("\"characterId\":\"DOKKAEBI_HUNTER\""));
+                    .contains("\"characterId\":\"DOKKAEBI_HUNTER\"")
+                    .contains("\"viewportWidth\":960")
+                    .contains("\"viewportHeight\":540"));
             assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
                     .contains("\"type\":\"INPUT_CHANGED\"")
                     .contains("\"up\":true")
@@ -469,6 +487,58 @@ class DesktopApplicationIntegrationTest {
             game.disconnect();
             Thread.sleep(1_200L);
             assertThat(backend.socketConnections.get()).isEqualTo(connectionsBeforeDisconnect);
+        }
+    }
+
+    @Test
+    void resizeAndPauseRequestsAreDebouncedAndRestoredAfterReconnect() throws Exception {
+        try (MockPlatform backend = new MockPlatform();
+             ClientFactory factory = clientFactory();
+             DesktopApiClient game = new DesktopApiClient(
+                     webClient(backend, factory),
+                     factory,
+                     new ObjectMapper())) {
+            game.startNewGame("jwt-token", "DOKKAEBI_HUNTER", 5_000, 3_000);
+            await(() -> game.snapshot().phase() == GamePhase.RUNNING);
+            assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
+                    .contains("\"type\":\"START_GAME\"")
+                    .contains("\"viewportWidth\":3840")
+                    .contains("\"viewportHeight\":2160"));
+
+            game.setViewportSize(1000, 560);
+            game.setViewportSize(1100, 620);
+            game.setViewportSize(1200, 680);
+            await(() -> backend.countSocketCommands("VIEWPORT_CHANGED") == 1);
+            assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
+                    .contains("\"type\":\"VIEWPORT_CHANGED\"")
+                    .contains("\"viewportWidth\":1200")
+                    .contains("\"viewportHeight\":680"));
+
+            game.setInput(new InputState(false, false, false, true));
+            await(() -> backend.countSocketInputsWith("\"right\":true") == 1);
+            game.setGamePaused(true);
+            await(() -> backend.countSocketCommands("SET_GAME_PAUSED") == 1);
+            assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
+                    .contains("\"type\":\"SET_GAME_PAUSED\"")
+                    .contains("\"paused\":true"));
+
+            backend.dropGameSocket();
+            await(() -> backend.socketConnections.get() >= 2
+                    && game.status().state() == DesktopApiStatus.State.ONLINE);
+            await(() -> backend.countSocketCommands("SET_GAME_PAUSED") == 2);
+
+            assertThat(backend.countSocketCommands("START_GAME")).isEqualTo(1);
+            assertThat(backend.countSocketCommands("VIEWPORT_CHANGED")).isEqualTo(2);
+            assertThat(backend.socketMessages.stream()
+                    .filter(message -> message.contains("\"type\":\"SET_GAME_PAUSED\""))
+                    .allMatch(message -> message.contains("\"paused\":true")))
+                    .isTrue();
+
+            game.setGamePaused(false);
+            await(() -> backend.countSocketCommands("SET_GAME_PAUSED") == 3);
+            assertThat(backend.socketMessages).anySatisfy(message -> assertThat(message)
+                    .contains("\"type\":\"SET_GAME_PAUSED\"")
+                    .contains("\"paused\":false"));
         }
     }
 
@@ -568,6 +638,9 @@ class DesktopApplicationIntegrationTest {
                  "authorizationUri":"https://accounts.example.test/login",
                  "expiresAt":"2099-01-01T00:00:00Z"}
                 """;
+        private volatile String settingsBody =
+                "{\"muted\":false,\"musicVolume\":70,\"effectsVolume\":65,"
+                        + "\"targetFps\":\"FPS_60\"}";
         private final ServerSocket stalledHandshakeServer;
         private final Server server;
 
@@ -632,6 +705,10 @@ class DesktopApplicationIntegrationTest {
 
         private void respondToAuthExchange(String status) {
             authExchangeStatus = status;
+        }
+
+        private void respondToSettings(String body) {
+            settingsBody = body;
         }
 
         private void releaseFirstAuthAttempt() {
@@ -728,9 +805,7 @@ class DesktopApplicationIntegrationTest {
                         """);
             }
             if (path.equals("/api/v1/members/me/settings") && request.method().name().equals("GET")) {
-                return json(HttpStatus.OK,
-                        "{\"muted\":false,\"musicVolume\":70,\"effectsVolume\":65,"
-                                + "\"targetFps\":\"FPS_60\"}");
+                return json(HttpStatus.OK, settingsBody);
             }
             if (path.equals("/api/v1/members/me/settings") && request.method().name().equals("PATCH")) {
                 return json(HttpStatus.OK, request.contentUtf8());
@@ -824,7 +899,7 @@ class DesktopApplicationIntegrationTest {
             return """
                     {"type":"GAME_SNAPSHOT","sequence":__SEQUENCE__,"payload":{
                      "sessionId":"session-1","snapshot":{
-                      "phase":"__PHASE__","elapsedSeconds":1.0,"remainingSeconds":299.0,
+                      "phase":"__PHASE__","paused":false,"elapsedSeconds":1.0,
                       "level":1,"experience":0,"experienceToNextLevel":5,"killCount":0,
                       "character":"DOKKAEBI_HUNTER","barrierAvailable":true,
                       "invulnerabilityRemainingSeconds":0.0,

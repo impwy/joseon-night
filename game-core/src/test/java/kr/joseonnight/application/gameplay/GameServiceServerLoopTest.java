@@ -130,20 +130,103 @@ class GameServiceServerLoopTest {
     }
 
     @Test
-    void handsACompletedResultToTheRecorderExactlyOnce() {
+    void explicitPauseSurvivesReconnectAndClearsMovementInput() {
+        GameService service = new GameService(quietRules(), 230L);
+        GameSessionHandle original = service.startNewGame(
+                "member-1",
+                CharacterType.DOKKAEBI_HUNTER,
+                960,
+                540);
+        service.setInput(
+                "member-1",
+                original.sessionId(),
+                original.connectionId(),
+                1L,
+                new InputState(false, false, false, true));
+        service.setPaused(
+                "member-1",
+                original.sessionId(),
+                original.connectionId(),
+                true);
+
+        for (int frame = 0; frame < 60; frame++) {
+            service.runServerFrame();
+        }
+
+        assertTrue(service.snapshot("member-1", original.sessionId()).paused());
+        assertEquals(0.0,
+                service.snapshot("member-1", original.sessionId()).elapsedSeconds(),
+                TOLERANCE);
+        assertEquals(0.0,
+                service.snapshot("member-1", original.sessionId()).player().x(),
+                TOLERANCE);
+
+        service.disconnect("member-1", original.sessionId(), original.connectionId());
+        GameSessionHandle reconnected = service.reconnect("member-1", original.sessionId());
+        assertTrue(reconnected.snapshot().paused());
+        service.setPaused(
+                "member-1",
+                reconnected.sessionId(),
+                reconnected.connectionId(),
+                false);
+        for (int frame = 0; frame < 60; frame++) {
+            service.runServerFrame();
+        }
+
+        assertEquals(1.0,
+                service.snapshot("member-1", original.sessionId()).elapsedSeconds(),
+                TOLERANCE);
+        assertEquals(0.0,
+                service.snapshot("member-1", original.sessionId()).player().x(),
+                TOLERANCE);
+        service.close();
+    }
+
+    @Test
+    void validatesViewportAtStartAndWhenItChanges() {
+        GameService service = new GameService(quietRules(), 231L);
+
+        assertThrows(IllegalArgumentException.class, () -> service.startNewGame(
+                "member-1",
+                CharacterType.DOKKAEBI_HUNTER,
+                639,
+                720));
+        GameSessionHandle handle = service.startNewGame(
+                "member-1",
+                CharacterType.DOKKAEBI_HUNTER,
+                640,
+                360);
+        assertThrows(IllegalArgumentException.class, () -> service.setViewport(
+                "member-1",
+                handle.sessionId(),
+                handle.connectionId(),
+                3_840,
+                2_161));
+
+        service.setViewport(
+                "member-1",
+                handle.sessionId(),
+                handle.connectionId(),
+                3_840,
+                2_160);
+        service.close();
+    }
+
+    @Test
+    void handsADefeatResultToTheRecorderExactlyOnce() {
         List<PlayRecordInfo> recorded = new ArrayList<>();
         PlayRecorder recorder = info -> {
             recorded.add(info);
             return null;
         };
         GameService service = new GameService(
-                shortVictoryRules(),
+                quickDefeatRules(),
                 24L,
                 System::nanoTime,
                 recorder,
                 Runnable::run
         );
-        service.startNewGame("42", CharacterType.DOKKAEBI_HUNTER);
+        service.startNewGame("42", CharacterType.GALE_SHAMAN);
 
         for (int frame = 0; frame < 20; frame++) {
             service.runServerFrame();
@@ -151,7 +234,7 @@ class GameServiceServerLoopTest {
 
         assertEquals(1, recorded.size());
         PlayRecordInfo result = recorded.getFirst();
-        assertEquals(PlayOutcome.VICTORY, result.outcome());
+        assertEquals(PlayOutcome.DEFEAT, result.outcome());
         assertTrue(result.rankingEligible());
         assertEquals(result.durationMillis() + result.killCount() * 100L, result.score());
         assertTrue(result.finalBuild().containsKey("items"));
@@ -171,13 +254,13 @@ class GameServiceServerLoopTest {
             return null;
         };
         GameService service = new GameService(
-                shortVictoryRules(),
+                quickDefeatRules(),
                 27L,
                 System::nanoTime,
                 recorder,
                 Runnable::run
         );
-        GameSessionHandle handle = service.startNewGame("45", CharacterType.DOKKAEBI_HUNTER);
+        GameSessionHandle handle = service.startNewGame("45", CharacterType.GALE_SHAMAN);
         AtomicInteger resultNotifications = new AtomicInteger();
         service.subscribe(
                 "45",
@@ -218,13 +301,13 @@ class GameServiceServerLoopTest {
             return null;
         };
         GameService service = new GameService(
-                shortVictoryRules(),
+                quickDefeatRules(),
                 28L,
                 System::nanoTime,
                 recorder,
                 Executors.newSingleThreadExecutor()
         );
-        service.startNewGame("46", CharacterType.DOKKAEBI_HUNTER);
+        service.startNewGame("46", CharacterType.GALE_SHAMAN);
         for (int frame = 0; frame < 20; frame++) {
             service.runServerFrame();
         }
@@ -244,10 +327,10 @@ class GameServiceServerLoopTest {
     @Test
     void retiresReplacedAndExpiredTerminalSessions() {
         AtomicLong time = new AtomicLong();
-        GameService service = new GameService(shortVictoryRules(), 29L, time::get);
-        service.startNewGame("member-1", CharacterType.DOKKAEBI_HUNTER);
+        GameService service = new GameService(quickDefeatRules(), 29L, time::get);
+        service.startNewGame("member-1", CharacterType.GALE_SHAMAN);
 
-        service.startNewGame("member-1", CharacterType.DOKKAEBI_HUNTER);
+        service.startNewGame("member-1", CharacterType.GALE_SHAMAN);
 
         assertEquals(1, service.managedSessionCount());
         for (int frame = 0; frame < 20; frame++) {
@@ -365,7 +448,6 @@ class GameServiceServerLoopTest {
 
     private static GameRules quietRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 760.0,
@@ -383,14 +465,13 @@ class GameServiceServerLoopTest {
                 10);
     }
 
-    private static GameRules shortVictoryRules() {
+    private static GameRules quickDefeatRules() {
         GameRules quiet = quietRules();
         return new GameRules(
-                0.05,
                 quiet.playerSpeed(),
                 quiet.playerRadius(),
-                quiet.enemySpawnRadius(),
-                quiet.enemySpawnIntervalSeconds(),
+                30.0,
+                0.01,
                 quiet.enemySpeed(),
                 quiet.enemyHealth(),
                 quiet.enemyRadius(),

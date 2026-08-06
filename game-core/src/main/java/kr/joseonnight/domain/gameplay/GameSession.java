@@ -23,13 +23,17 @@ public final class GameSession {
     private static final double SOUL_ATTRACTION_SPEED = 360.0;
     private static final double MAX_PROJECTILE_DISTANCE_FACTOR = 1.5;
     private static final double MIN_ATTACK_COOLDOWN_SECONDS = 0.12;
-    private static final double TIME_EPSILON_SECONDS = 1.0e-9;
     private static final double BARRIER_INVULNERABILITY_SECONDS = 2.0;
     private static final double CHEST_RADIUS = 24.0;
     private static final double CHEST_MIN_DISTANCE = 600.0;
     private static final double CHEST_MAX_DISTANCE = 2_200.0;
+    private static final double PERIODIC_CHEST_INTERVAL_SECONDS = 60.0;
+    private static final double PERIODIC_YELLOW_CHEST_PROBABILITY = 0.60;
+    private static final double CHEST_MIN_SPACING = 96.0;
     private static final int YELLOW_CHEST_COUNT = 3;
     private static final int PURPLE_CHEST_COUNT = 2;
+    private static final int MAX_ACTIVE_CHESTS = 8;
+    private static final int CHEST_PLACEMENT_ATTEMPTS = 8;
     private static final int MAX_PROJECTILES_PER_VOLLEY = 5;
     private static final int MAX_RECENT_SOUND_EVENTS = 64;
     private static final int MAX_ACTIVE_LIGHTNING_STRIKES = 32;
@@ -50,12 +54,15 @@ public final class GameSession {
     private final Map<EvolutionType, Double> evolutionCooldowns = new EnumMap<>(EvolutionType.class);
 
     private GamePhase phase;
+    private GameViewport viewport;
+    private boolean paused;
     private InputState input = InputState.idle();
     private List<UpgradeType> upgradeChoices = List.of();
     private List<RewardOption> levelUpOptions = List.of();
     private List<RewardOption> chestRewardOptions = List.of();
     private double elapsedSeconds;
     private double spawnAccumulatorSeconds;
+    private double chestSpawnAccumulatorSeconds;
     private double itemBaseDamage;
     private double itemAttackCooldownSeconds;
     private int itemProjectileCount = 1;
@@ -70,12 +77,14 @@ public final class GameSession {
             GameRules rules,
             long seed,
             GamePhase initialPhase,
-            CharacterType character
+            CharacterType character,
+            GameViewport viewport
     ) {
         this.rules = Objects.requireNonNull(rules, "rules");
         this.character = Objects.requireNonNull(character, "character");
         random = new Random(seed);
         phase = Objects.requireNonNull(initialPhase, "initialPhase");
+        this.viewport = Objects.requireNonNull(viewport, "viewport");
         player = new Player(
                 rules.playerRadius(),
                 rules.playerSpeed() * character.speedMultiplier(),
@@ -91,7 +100,12 @@ public final class GameSession {
     }
 
     public static GameSession lobby(GameRules rules, long seed) {
-        return new GameSession(rules, seed, GamePhase.LOBBY, CharacterType.DOKKAEBI_HUNTER);
+        return new GameSession(
+                rules,
+                seed,
+                GamePhase.LOBBY,
+                CharacterType.DOKKAEBI_HUNTER,
+                GameViewport.standard());
     }
 
     public static GameSession running(GameRules rules, long seed) {
@@ -99,48 +113,65 @@ public final class GameSession {
     }
 
     public static GameSession running(GameRules rules, long seed, CharacterType character) {
-        return new GameSession(rules, seed, GamePhase.RUNNING, character);
+        return running(rules, seed, character, GameViewport.standard());
+    }
+
+    public static GameSession running(
+            GameRules rules,
+            long seed,
+            CharacterType character,
+            GameViewport viewport
+    ) {
+        return new GameSession(rules, seed, GamePhase.RUNNING, character, viewport);
     }
 
     public void setInput(InputState input) {
-        this.input = Objects.requireNonNull(input, "input");
+        InputState nextInput = Objects.requireNonNull(input, "input");
+        this.input = paused ? InputState.idle() : nextInput;
+    }
+
+    public void setViewport(GameViewport viewport) {
+        this.viewport = Objects.requireNonNull(viewport, "viewport");
+    }
+
+    public void setPaused(boolean paused) {
+        if (phase == GamePhase.DEFEAT || phase == GamePhase.ABANDONED) {
+            return;
+        }
+        this.paused = paused;
+        if (paused) {
+            input = InputState.idle();
+        }
     }
 
     public void tick(double deltaSeconds) {
         validateDelta(deltaSeconds);
-        if (phase != GamePhase.RUNNING || deltaSeconds == 0.0) {
+        if (phase != GamePhase.RUNNING || paused || deltaSeconds == 0.0) {
             return;
         }
 
-        double remainingBeforeTick = rules.durationSeconds() - elapsedSeconds;
-        double simulatedSeconds = Math.min(deltaSeconds, remainingBeforeTick);
-        boolean durationReached = remainingBeforeTick - simulatedSeconds <= TIME_EPSILON_SECONDS;
-        elapsedSeconds = durationReached
-                ? rules.durationSeconds()
-                : elapsedSeconds + simulatedSeconds;
+        elapsedSeconds += deltaSeconds;
         player.invulnerabilityRemainingSeconds = Math.max(
                 0.0,
-                player.invulnerabilityRemainingSeconds - simulatedSeconds);
+                player.invulnerabilityRemainingSeconds - deltaSeconds);
+        accumulateChestSpawnTime(deltaSeconds);
 
-        movePlayer(simulatedSeconds);
+        movePlayer(deltaSeconds);
         if (openTouchedChest()) {
             return;
         }
-        spawnEnemies(simulatedSeconds);
-        moveEnemies(simulatedSeconds);
+        spawnPeriodicChests();
+        spawnEnemies(deltaSeconds);
+        moveEnemies(deltaSeconds);
         if (resolveEnemyContact()) {
             return;
         }
 
-        updateLightningStrikes(simulatedSeconds);
-        fireEquippedWeapons(simulatedSeconds);
-        moveProjectilesAndResolveHits(simulatedSeconds);
-        attractAndCollectSoulFlames(simulatedSeconds);
+        updateLightningStrikes(deltaSeconds);
+        fireEquippedWeapons(deltaSeconds);
+        moveProjectilesAndResolveHits(deltaSeconds);
+        attractAndCollectSoulFlames(deltaSeconds);
         beginLevelUpIfReady();
-
-        if (durationReached && phase == GamePhase.RUNNING) {
-            finish(GamePhase.VICTORY);
-        }
     }
 
     /** Selects one of the currently offered general upgrades. */
@@ -174,7 +205,7 @@ public final class GameSession {
     }
 
     public void abandon() {
-        if (phase == GamePhase.VICTORY || phase == GamePhase.DEFEAT || phase == GamePhase.ABANDONED) {
+        if (phase == GamePhase.DEFEAT || phase == GamePhase.ABANDONED) {
             return;
         }
         finish(GamePhase.ABANDONED);
@@ -183,8 +214,8 @@ public final class GameSession {
     public GameState state() {
         return new GameState(
                 phase,
+                paused,
                 elapsedSeconds,
-                Math.max(0.0, rules.durationSeconds() - elapsedSeconds),
                 level,
                 experience,
                 experienceToNextLevel,
@@ -202,7 +233,10 @@ public final class GameSession {
                 loadout.evolutionStates(),
                 loadout.occupiedSlots(),
                 chests.stream().map(WorldChest::snapshot).toList(),
-                chests.stream().map(this::indicatorFor).toList(),
+                chests.stream()
+                        .filter(chest -> !isVisible(chest.x, chest.y, CHEST_RADIUS))
+                        .map(this::indicatorFor)
+                        .toList(),
                 levelUpOptions,
                 chestRewardOptions,
                 soundEvents);
@@ -244,6 +278,51 @@ public final class GameSession {
                 Math.sin(angle) * distance));
     }
 
+    private void accumulateChestSpawnTime(double deltaSeconds) {
+        chestSpawnAccumulatorSeconds += deltaSeconds;
+        if (chests.size() >= MAX_ACTIVE_CHESTS) {
+            chestSpawnAccumulatorSeconds = Math.min(
+                    chestSpawnAccumulatorSeconds,
+                    PERIODIC_CHEST_INTERVAL_SECONDS);
+        }
+    }
+
+    private void spawnPeriodicChests() {
+        while (chestSpawnAccumulatorSeconds >= PERIODIC_CHEST_INTERVAL_SECONDS
+                && chests.size() < MAX_ACTIVE_CHESTS) {
+            chestSpawnAccumulatorSeconds -= PERIODIC_CHEST_INTERVAL_SECONDS;
+            createPeriodicChest();
+        }
+        if (chests.size() >= MAX_ACTIVE_CHESTS) {
+            chestSpawnAccumulatorSeconds = Math.min(
+                    chestSpawnAccumulatorSeconds,
+                    PERIODIC_CHEST_INTERVAL_SECONDS);
+        }
+    }
+
+    private void createPeriodicChest() {
+        ChestType type = random.nextDouble() < PERIODIC_YELLOW_CHEST_PROBABILITY
+                ? ChestType.YELLOW
+                : ChestType.PURPLE;
+        for (int attempt = 0; attempt < CHEST_PLACEMENT_ATTEMPTS; attempt++) {
+            double angle = random.nextDouble() * Math.PI * 2.0;
+            double distance = CHEST_MIN_DISTANCE
+                    + random.nextDouble() * (CHEST_MAX_DISTANCE - CHEST_MIN_DISTANCE);
+            double x = player.x + Math.cos(angle) * distance;
+            double y = player.y + Math.sin(angle) * distance;
+            if (hasChestSpacing(x, y)) {
+                chests.add(new WorldChest(nextId(), type, x, y));
+                return;
+            }
+        }
+    }
+
+    private boolean hasChestSpacing(double x, double y) {
+        double minimumDistanceSquared = CHEST_MIN_SPACING * CHEST_MIN_SPACING;
+        return chests.stream().allMatch(chest ->
+                squaredDistance(x, y, chest.x, chest.y) >= minimumDistanceSquared);
+    }
+
     private boolean openTouchedChest() {
         for (int index = 0; index < chests.size(); index++) {
             WorldChest chest = chests.get(index);
@@ -261,7 +340,7 @@ public final class GameSession {
                 } else {
                     phase = GamePhase.CHEST_REWARD;
                 }
-                return phase == GamePhase.CHEST_REWARD;
+                return true;
             }
         }
         return false;
@@ -360,26 +439,28 @@ public final class GameSession {
     }
 
     private void fireEquippedWeapons(double deltaSeconds) {
-        if (enemies.isEmpty()) {
+        if (visibleEnemies().isEmpty()) {
             reduceCooldowns(deltaSeconds);
             return;
         }
         for (ItemType item : loadout.equippedItems()) {
-            if (enemies.isEmpty()) {
+            List<Enemy> targets = visibleEnemies();
+            if (targets.isEmpty()) {
                 break;
             }
             double remaining = itemCooldowns.getOrDefault(item, 0.0) - deltaSeconds;
-            if (remaining <= 0.0 && fireItem(item, loadout.itemLevel(item))) {
+            if (remaining <= 0.0 && fireItem(item, loadout.itemLevel(item), targets)) {
                 remaining = itemCooldown(item);
             }
             itemCooldowns.put(item, remaining);
         }
         for (EvolutionType evolution : loadout.equippedEvolutions()) {
-            if (enemies.isEmpty()) {
+            List<Enemy> targets = visibleEnemies();
+            if (targets.isEmpty()) {
                 break;
             }
             double remaining = evolutionCooldowns.getOrDefault(evolution, 0.0) - deltaSeconds;
-            if (remaining <= 0.0 && fireEvolution(evolution)) {
+            if (remaining <= 0.0 && fireEvolution(evolution, targets)) {
                 remaining = Math.max(MIN_ATTACK_COOLDOWN_SECONDS, itemAttackCooldownSeconds * 0.65);
             }
             evolutionCooldowns.put(evolution, remaining);
@@ -391,32 +472,36 @@ public final class GameSession {
         evolutionCooldowns.replaceAll((ignored, remaining) -> remaining - deltaSeconds);
     }
 
-    private boolean fireItem(ItemType item, int itemLevel) {
+    private boolean fireItem(ItemType item, int itemLevel, List<Enemy> targets) {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY,
                 itemProjectileCount + (itemLevel - 1) / 2 + itemShotBonus(item));
         double damage = itemBaseDamage * itemDamageMultiplier(item) * (1.0 + 0.20 * (itemLevel - 1));
         if (item.attackMode() == AttackMode.LIGHTNING) {
-            return strikeWithLightning(item.id(), SoundCue.forItem(item), shots, damage);
+            return strikeWithLightning(item.id(), SoundCue.forItem(item), shots, damage, targets);
         }
-        return fireVolley(item.id(), SoundCue.forItem(item), shots, damage, itemSpreadDegrees(item));
+        return fireVolley(
+                item.id(), SoundCue.forItem(item), shots, damage, itemSpreadDegrees(item), targets);
     }
 
-    private boolean fireEvolution(EvolutionType evolution) {
+    private boolean fireEvolution(EvolutionType evolution, List<Enemy> targets) {
         int shots = Math.min(MAX_PROJECTILES_PER_VOLLEY, itemProjectileCount + 3);
         double damage = itemBaseDamage * 3.0;
         if (evolution.attackMode() == AttackMode.LIGHTNING) {
-            return strikeWithLightning(evolution.id(), SoundCue.forEvolution(evolution), shots, damage);
+            return strikeWithLightning(
+                    evolution.id(), SoundCue.forEvolution(evolution), shots, damage, targets);
         }
-        return fireVolley(evolution.id(), SoundCue.forEvolution(evolution), shots, damage, 18.0);
+        return fireVolley(
+                evolution.id(), SoundCue.forEvolution(evolution), shots, damage, 18.0, targets);
     }
 
     private boolean strikeWithLightning(
             String kindId,
             SoundCue soundCue,
             int requestedStrikes,
-            double damage
+            double damage,
+            List<Enemy> visibleTargets
     ) {
-        List<Enemy> targets = enemies.stream()
+        List<Enemy> targets = visibleTargets.stream()
                 .sorted(java.util.Comparator
                         .comparingDouble((Enemy enemy) -> squaredDistance(
                                 player.x, player.y, enemy.x, enemy.y))
@@ -456,14 +541,15 @@ public final class GameSession {
             SoundCue soundCue,
             int requestedShots,
             double damage,
-            double spreadDegrees
+            double spreadDegrees,
+            List<Enemy> visibleTargets
     ) {
         int availableCapacity = rules.maxProjectiles() - projectiles.size();
         int shots = Math.min(requestedShots, availableCapacity);
-        if (shots <= 0 || enemies.isEmpty()) {
+        if (shots <= 0 || visibleTargets.isEmpty()) {
             return false;
         }
-        Enemy target = nearestEnemy();
+        Enemy target = nearestEnemy(visibleTargets);
         double baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
         emitSound(soundCue);
         double center = (shots - 1) / 2.0;
@@ -524,11 +610,11 @@ public final class GameSession {
         };
     }
 
-    private Enemy nearestEnemy() {
-        Enemy nearest = enemies.getFirst();
+    private Enemy nearestEnemy(List<Enemy> candidates) {
+        Enemy nearest = candidates.getFirst();
         double nearestDistance = squaredDistance(player.x, player.y, nearest.x, nearest.y);
-        for (int index = 1; index < enemies.size(); index++) {
-            Enemy candidate = enemies.get(index);
+        for (int index = 1; index < candidates.size(); index++) {
+            Enemy candidate = candidates.get(index);
             double candidateDistance = squaredDistance(player.x, player.y, candidate.x, candidate.y);
             if (candidateDistance < nearestDistance) {
                 nearest = candidate;
@@ -536,6 +622,16 @@ public final class GameSession {
             }
         }
         return nearest;
+    }
+
+    private List<Enemy> visibleEnemies() {
+        return enemies.stream()
+                .filter(enemy -> isVisible(enemy.x, enemy.y, enemy.radius))
+                .toList();
+    }
+
+    private boolean isVisible(double x, double y, double radius) {
+        return viewport.intersectsCircle(player.x, player.y, x, y, radius);
     }
 
     private void moveProjectilesAndResolveHits(double deltaSeconds) {
@@ -645,6 +741,14 @@ public final class GameSession {
                 health));
     }
 
+    /** Package-scoped root operation used by deterministic domain scenarios. */
+    void movePlayerTo(double x, double y) {
+        Assert.isTrue(Double.isFinite(x) && Double.isFinite(y),
+                "player position must be finite");
+        player.x = x;
+        player.y = y;
+    }
+
     private void attractAndCollectSoulFlames(double deltaSeconds) {
         for (int index = soulFlames.size() - 1; index >= 0; index--) {
             SoulFlame soulFlame = soulFlames.get(index);
@@ -723,9 +827,8 @@ public final class GameSession {
         phase = result;
         if (result == GamePhase.DEFEAT) {
             emitSound(SoundCue.DEFEAT);
-        } else if (result == GamePhase.VICTORY) {
-            emitSound(SoundCue.VICTORY);
         }
+        paused = false;
         input = InputState.idle();
         upgradeChoices = List.of();
         levelUpOptions = List.of();

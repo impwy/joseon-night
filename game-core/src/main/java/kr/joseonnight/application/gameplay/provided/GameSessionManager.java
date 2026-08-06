@@ -1,6 +1,8 @@
 package kr.joseonnight.application.gameplay.provided;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -14,7 +16,9 @@ public interface GameSessionManager {
 
     GameSessionHandle startNewGame(
             @NotBlank String memberId,
-            @NotNull CharacterType character
+            @NotNull CharacterType character,
+            @Min(640) @Max(3840) int viewportWidth,
+            @Min(360) @Max(2160) int viewportHeight
     );
 
     GameSessionHandle reconnect(
@@ -34,6 +38,21 @@ public interface GameSessionManager {
             @NotBlank String connectionId,
             @PositiveOrZero long commandSequence,
             @Valid @NotNull InputState input
+    );
+
+    void setViewport(
+            @NotBlank String memberId,
+            @NotBlank String sessionId,
+            @NotBlank String connectionId,
+            @Min(640) @Max(3840) int viewportWidth,
+            @Min(360) @Max(2160) int viewportHeight
+    );
+
+    void setPaused(
+            @NotBlank String memberId,
+            @NotBlank String sessionId,
+            @NotBlank String connectionId,
+            boolean paused
     );
 
     void chooseLevelUp(

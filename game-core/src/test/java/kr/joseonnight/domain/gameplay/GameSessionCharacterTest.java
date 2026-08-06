@@ -110,15 +110,22 @@ class GameSessionCharacterTest {
         assertEquals(2, state.chests().stream()
                 .filter(chest -> chest.type() == ChestType.PURPLE)
                 .count());
-        assertTrue(state.chestIndicators().stream()
-                .allMatch(indicator -> indicator.distance() >= 600.0
-                        && indicator.distance() <= 2_200.0));
+        assertTrue(state.chests().stream().allMatch(chest -> {
+            double distance = Math.hypot(chest.x(), chest.y());
+            return distance >= 600.0 && distance <= 2_200.0;
+        }));
+        assertTrue(state.chests().stream().allMatch(chest -> {
+            boolean visible = Math.abs(chest.x()) <= 640.0 + chest.radius()
+                    && Math.abs(chest.y()) <= 360.0 + chest.radius();
+            boolean hasIndicator = state.chestIndicators().stream()
+                    .anyMatch(indicator -> indicator.chestId() == chest.id());
+            return hasIndicator != visible;
+        }));
         assertEquals(0.0, state.player().rotationDegrees(), TOLERANCE);
     }
 
     private static GameRules contactRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 30.0,
@@ -138,7 +145,6 @@ class GameSessionCharacterTest {
 
     private static GameRules quietRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 760.0,
@@ -158,7 +164,6 @@ class GameSessionCharacterTest {
 
     private static GameRules firingRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 200.0,

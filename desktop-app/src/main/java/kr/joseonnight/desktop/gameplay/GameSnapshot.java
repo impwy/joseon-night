@@ -17,7 +17,7 @@ import java.util.Objects;
 public record GameSnapshot(
         GamePhase phase,
         double elapsedSeconds,
-        double remainingSeconds,
+        boolean paused,
         int level,
         int experience,
         int experienceToNextLevel,
@@ -61,7 +61,6 @@ public record GameSnapshot(
     public GameSnapshot(
             GamePhase phase,
             double elapsedSeconds,
-            double remainingSeconds,
             int level,
             int experience,
             int experienceToNextLevel,
@@ -74,7 +73,7 @@ public record GameSnapshot(
         this(
                 phase,
                 elapsedSeconds,
-                remainingSeconds,
+                false,
                 level,
                 experience,
                 experienceToNextLevel,
@@ -102,7 +101,6 @@ public record GameSnapshot(
         return new GameSnapshot(
                 GamePhase.LOBBY,
                 0.0,
-                300.0,
                 1,
                 0,
                 5,

@@ -17,7 +17,7 @@ class MemberSettingsTest {
         assertThat(settings.getMemberId()).isEqualTo(1L);
         assertThat(settings.getNickname()).isEqualTo("야행꾼");
         assertThat(settings.isMuted()).isFalse();
-        assertThat(settings.getMusicVolume()).isEqualTo(70);
+        assertThat(settings.getMusicVolume()).isEqualTo(60);
         assertThat(settings.getEffectsVolume()).isEqualTo(70);
         assertThat(settings.getTargetFps()).isEqualTo(TargetFps.FPS_60);
         assertThat(settings.getUpdatedAt()).isEqualTo(CREATED_AT);
@@ -50,7 +50,7 @@ class MemberSettingsTest {
         )).isInstanceOf(IllegalArgumentException.class);
 
         assertThat(settings.isMuted()).isFalse();
-        assertThat(settings.getMusicVolume()).isEqualTo(70);
+        assertThat(settings.getMusicVolume()).isEqualTo(60);
         assertThat(settings.getEffectsVolume()).isEqualTo(70);
         assertThat(settings.getTargetFps()).isEqualTo(TargetFps.FPS_60);
         assertThat(settings.getUpdatedAt()).isEqualTo(CREATED_AT);

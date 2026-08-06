@@ -55,6 +55,13 @@ public final class DesktopApiClient implements AutoCloseable {
     static final String SOCKET_TICKETS_PATH = "/api/v1/game/socket-tickets";
     private static final Duration RECONNECT_DELAY = Duration.ofSeconds(1);
     private static final Duration RECONNECT_WINDOW = Duration.ofSeconds(30);
+    static final Duration VIEWPORT_DEBOUNCE = Duration.ofMillis(150);
+    private static final int DEFAULT_VIEWPORT_WIDTH = 1280;
+    private static final int DEFAULT_VIEWPORT_HEIGHT = 720;
+    private static final int MIN_VIEWPORT_WIDTH = 640;
+    private static final int MIN_VIEWPORT_HEIGHT = 360;
+    static final int MAX_VIEWPORT_WIDTH = 3840;
+    static final int MAX_VIEWPORT_HEIGHT = 2160;
 
     private final WebClient restClient;
     private final ClientFactory clientFactory;
@@ -65,10 +72,14 @@ public final class DesktopApiClient implements AutoCloseable {
     private final AtomicReference<DesktopApiStatus> status =
             new AtomicReference<>(DesktopApiStatus.offline("게임을 시작하면 서버에 연결합니다."));
     private final AtomicReference<InputState> requestedInput = new AtomicReference<>(InputState.idle());
+    private final AtomicReference<ViewportSize> requestedViewport = new AtomicReference<>(
+            new ViewportSize(DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT));
+    private final AtomicBoolean requestedPaused = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong connectionGeneration = new AtomicLong();
     private final AtomicLong requestIds = new AtomicLong();
     private final AtomicLong inputSequence = new AtomicLong();
+    private final AtomicLong viewportRevision = new AtomicLong();
 
     private volatile Runnable stateListener = () -> { };
     private volatile WebSocketWriter outbound;
@@ -118,6 +129,15 @@ public final class DesktopApiClient implements AutoCloseable {
         startConnection(token, selectedCharacter);
     }
 
+    public void startNewGame(
+            String accessToken,
+            String characterId,
+            double viewportWidth,
+            double viewportHeight) {
+        requestedViewport.set(viewportSize(viewportWidth, viewportHeight));
+        startNewGame(accessToken, characterId);
+    }
+
     /** Restarts with the in-memory session and character selected for the previous run. */
     public void startNewGame() {
         String token = currentAccessToken;
@@ -131,10 +151,12 @@ public final class DesktopApiClient implements AutoCloseable {
 
     public void disconnect() {
         connectionGeneration.incrementAndGet();
+        viewportRevision.incrementAndGet();
         reconnectDeadlineNanos = 0L;
         currentSessionId = null;
         closeCurrentSocket();
         requestedInput.set(InputState.idle());
+        requestedPaused.set(false);
         sentInput = null;
         latestSnapshot.set(GameSnapshot.lobby());
         updateStatus(DesktopApiStatus.offline("게임 서버 연결을 종료했습니다."));
@@ -148,7 +170,10 @@ public final class DesktopApiClient implements AutoCloseable {
 
     /** Sends input only when the held-key state actually changes. */
     public void setInput(InputState input) {
-        InputState next = Objects.requireNonNull(input, "input");
+        InputState requested = Objects.requireNonNull(input, "input");
+        InputState next = requestedPaused.get()
+                ? InputState.idle()
+                : requested;
         InputState previous = requestedInput.getAndSet(next);
         if (!next.equals(previous) && !closed.get()) {
             worker.execute(() -> sendInputIfChanged(next));
@@ -188,6 +213,39 @@ public final class DesktopApiClient implements AutoCloseable {
         executeCommand("CHOOSE_CHEST_REWARD", Map.of("optionId", choice));
     }
 
+    /** Stores the logical canvas size and sends only the final value of a resize burst. */
+    public void setViewportSize(double width, double height) {
+        ViewportSize next = viewportSize(width, height);
+        ViewportSize previous = requestedViewport.getAndSet(next);
+        if (next.equals(previous) || closed.get()) {
+            return;
+        }
+        long revision = viewportRevision.incrementAndGet();
+        worker.schedule(
+                () -> sendViewportIfCurrent(revision),
+                VIEWPORT_DEBOUNCE.toMillis(),
+                TimeUnit.MILLISECONDS);
+    }
+
+    /** Requests a server-authoritative pause without changing the current game phase. */
+    public void setGamePaused(boolean paused) {
+        boolean previous = requestedPaused.getAndSet(paused);
+        if (paused) {
+            requestedInput.set(InputState.idle());
+        }
+        if (previous == paused || closed.get()) {
+            return;
+        }
+        worker.execute(() -> {
+            if (paused) {
+                sendInputIfChanged(InputState.idle());
+            }
+            if (outbound != null) {
+                sendPauseRequest(paused);
+            }
+        });
+    }
+
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
@@ -197,6 +255,7 @@ public final class DesktopApiClient implements AutoCloseable {
             currentCharacterId = null;
             currentSessionId = null;
             reconnectDeadlineNanos = 0L;
+            viewportRevision.incrementAndGet();
             worker.shutdownNow();
         }
     }
@@ -210,6 +269,7 @@ public final class DesktopApiClient implements AutoCloseable {
         currentSessionId = null;
         closeCurrentSocket();
         requestedInput.set(InputState.idle());
+        requestedPaused.set(false);
         sentInput = null;
         inputSequence.set(0L);
         latestServerSequence = -1L;
@@ -283,7 +343,17 @@ public final class DesktopApiClient implements AutoCloseable {
             session.inbound().subscribe(new InboundSubscriber(generation));
             updateStatus(DesktopApiStatus.online());
             if (reconnectSessionId == null) {
-                sendCommand("START_GAME", Map.of("characterId", characterId));
+                ViewportSize viewport = requestedViewport.get();
+                sendCommand("START_GAME", Map.of(
+                        "characterId", characterId,
+                        "viewportWidth", viewport.width(),
+                        "viewportHeight", viewport.height()));
+                if (requestedPaused.get()) {
+                    sendPauseRequest(true);
+                }
+            } else {
+                sendViewportChanged(requestedViewport.get());
+                sendPauseRequest(requestedPaused.get());
             }
             sendInputIfChanged(requestedInput.get());
         } catch (ExecutionException exception) {
@@ -322,6 +392,22 @@ public final class DesktopApiClient implements AutoCloseable {
         if (!closed.get()) {
             worker.execute(() -> sendCommand(type, payload));
         }
+    }
+
+    private void sendViewportIfCurrent(long revision) {
+        if (revision == viewportRevision.get() && outbound != null) {
+            sendViewportChanged(requestedViewport.get());
+        }
+    }
+
+    private void sendViewportChanged(ViewportSize viewport) {
+        sendCommand("VIEWPORT_CHANGED", Map.of(
+                "viewportWidth", viewport.width(),
+                "viewportHeight", viewport.height()));
+    }
+
+    private void sendPauseRequest(boolean paused) {
+        sendCommand("SET_GAME_PAUSED", Map.of("paused", paused));
     }
 
     private void sendInputIfChanged(InputState input) {
@@ -566,6 +652,19 @@ public final class DesktopApiClient implements AutoCloseable {
         return value;
     }
 
+    private static ViewportSize viewportSize(double width, double height) {
+        if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0.0 || height <= 0.0) {
+            throw new IllegalArgumentException("viewport dimensions must be finite and positive");
+        }
+        return new ViewportSize(
+                clamp((int) Math.round(width), MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+                clamp((int) Math.round(height), MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT));
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
+    }
+
     private final class InboundSubscriber implements Subscriber<WebSocketFrame> {
         private final long generation;
 
@@ -612,6 +711,9 @@ public final class DesktopApiClient implements AutoCloseable {
             boolean left,
             boolean right,
             long commandSequence) {
+    }
+
+    private record ViewportSize(int width, int height) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

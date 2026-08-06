@@ -13,7 +13,7 @@ public record AudioSettings(
     }
 
     public static AudioSettings defaults() {
-        return new AudioSettings(false, 70, 70, TargetFps.FPS_60);
+        return new AudioSettings(false, 60, 70, TargetFps.FPS_60);
     }
 
     public double effectiveMusicVolume() {

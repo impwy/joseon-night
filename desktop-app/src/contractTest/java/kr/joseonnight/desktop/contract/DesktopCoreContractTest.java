@@ -75,7 +75,9 @@ class DesktopCoreContractTest {
                 coreJson,
                 kr.joseonnight.desktop.gameplay.GameSnapshot.class);
 
+        assertThat(coreJson).contains("\"paused\":false").doesNotContain("remainingSeconds");
         assertThat(desktopSnapshot.phase()).isEqualTo(GamePhase.RUNNING);
+        assertThat(desktopSnapshot.paused()).isFalse();
         assertThat(desktopSnapshot.characterId()).isEqualTo("GALE_SHAMAN");
         assertThat(desktopSnapshot.player().kindId()).isEqualTo("gale-shaman");
         assertThat(desktopSnapshot.itemSlots()).isNotEmpty();

@@ -1,8 +1,11 @@
 package kr.joseonnight.adapter.desktopapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.linecorp.armeria.server.Server;
 import jakarta.validation.Validation;
@@ -76,7 +79,8 @@ class GameWebSocketApiTest {
 
         socket.sendText("""
                 {"type":"START_GAME","requestId":"request-1",\
-                 "payload":{"characterId":"gale-shaman"}}
+                 "payload":{"characterId":"gale-shaman",\
+                 "viewportWidth":960,"viewportHeight":540}}
                 """, true).join();
         String text = listener.messages.poll(5, TimeUnit.SECONDS);
 
@@ -88,6 +92,39 @@ class GameWebSocketApiTest {
                 response.get("payload").get("requestId").stringValue());
         assertEquals("GALE_SHAMAN",
                 response.get("payload").get("snapshot").get("character").stringValue());
+        assertFalse(response.get("payload").get("snapshot").get("paused").booleanValue());
+        assertNull(response.get("payload").get("snapshot").get("remainingSeconds"));
+        socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+    }
+
+    @Test
+    void changesViewportAndReturnsTheServerPauseState() throws Exception {
+        TextListener listener = new TextListener();
+        WebSocket socket = HttpClient.newHttpClient()
+                .newWebSocketBuilder()
+                .header("Authorization", "Ticket valid-ticket")
+                .buildAsync(uri, listener)
+                .join();
+        socket.sendText("""
+                {"type":"START_GAME","requestId":"request-1",\
+                 "payload":{"characterId":"dokkaebi-hunter",\
+                 "viewportWidth":1280,"viewportHeight":720}}
+                """, true).join();
+        assertNotNull(listener.messages.poll(5, TimeUnit.SECONDS));
+
+        socket.sendText("""
+                {"type":"VIEWPORT_CHANGED","requestId":"request-2",\
+                 "payload":{"viewportWidth":960,"viewportHeight":540}}
+                """, true).join();
+        socket.sendText("""
+                {"type":"SET_GAME_PAUSED","requestId":"request-3",\
+                 "payload":{"paused":true}}
+                """, true).join();
+        JsonNode response = objectMapper.readTree(listener.messages.poll(5, TimeUnit.SECONDS));
+
+        assertEquals("GAME_SNAPSHOT", response.get("type").stringValue());
+        assertEquals("request-3", response.get("payload").get("requestId").stringValue());
+        assertTrue(response.get("payload").get("snapshot").get("paused").booleanValue());
         socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
     }
 
@@ -105,6 +142,14 @@ class GameWebSocketApiTest {
                  "payload":{"characterId":" "}}
                 """, true).join();
         socket.sendText("""
+                {"type":"VIEWPORT_CHANGED","requestId":"invalid-viewport",\
+                 "payload":{"viewportWidth":639,"viewportHeight":540}}
+                """, true).join();
+        socket.sendText("""
+                {"type":"SET_GAME_PAUSED","requestId":"invalid-pause",\
+                 "payload":{}}
+                """, true).join();
+        socket.sendText("""
                 {"type":"INPUT_CHANGED","requestId":"invalid-input",\
                  "payload":{"up":true,"down":false,"left":false,"commandSequence":0}}
                 """, true).join();
@@ -118,7 +163,8 @@ class GameWebSocketApiTest {
                 """, true).join();
 
         for (String requestId : new String[] {
-                "invalid-start", "invalid-input", "invalid-level", "invalid-chest"
+                "invalid-start", "invalid-viewport", "invalid-pause",
+                "invalid-input", "invalid-level", "invalid-chest"
         }) {
             JsonNode response = objectMapper.readTree(listener.messages.poll(5, TimeUnit.SECONDS));
             assertEquals("ERROR", response.get("type").stringValue());

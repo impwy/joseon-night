@@ -8,7 +8,6 @@ public enum GamePhase {
     RUNNING,
     LEVEL_UP,
     CHEST_REWARD,
-    VICTORY,
     DEFEAT,
     ABANDONED
 }

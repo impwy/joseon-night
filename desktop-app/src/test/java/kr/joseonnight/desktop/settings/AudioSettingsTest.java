@@ -8,6 +8,14 @@ import org.junit.jupiter.api.Test;
 
 class AudioSettingsTest {
     @Test
+    void defaultsUseLowerMusicVolumeWithoutLoweringEffects() {
+        AudioSettings settings = AudioSettings.defaults();
+
+        assertThat(settings.musicVolume()).isEqualTo(60);
+        assertThat(settings.effectsVolume()).isEqualTo(70);
+    }
+
+    @Test
     void muteSilencesMusicAndEffectsWithoutChangingSavedVolumes() {
         AudioSettings settings = new AudioSettings(true, 35, 80, TargetFps.FPS_30);
 

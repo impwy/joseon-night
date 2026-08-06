@@ -264,15 +264,19 @@ public final class MemberApiClient implements AutoCloseable {
             String targetFps,
             Integer masterVolume) {
         private int resolvedMusicVolume() {
-            return musicVolume == null ? legacyOrDefaultVolume() : musicVolume;
+            return musicVolume == null ? legacyOrDefaultMusicVolume() : musicVolume;
         }
 
         private int resolvedEffectsVolume() {
-            return effectsVolume == null ? legacyOrDefaultVolume() : effectsVolume;
+            return effectsVolume == null ? legacyOrDefaultEffectsVolume() : effectsVolume;
         }
 
-        private int legacyOrDefaultVolume() {
+        private int legacyOrDefaultMusicVolume() {
             return masterVolume == null ? AudioSettings.defaults().musicVolume() : masterVolume;
+        }
+
+        private int legacyOrDefaultEffectsVolume() {
+            return masterVolume == null ? AudioSettings.defaults().effectsVolume() : masterVolume;
         }
 
         private TargetFps resolvedTargetFps() {

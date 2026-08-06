@@ -5,7 +5,7 @@
 - 다른 게임의 이미지, 스프라이트, 음악, 로고를 입력 또는 최종 자산으로 사용하지 않는다.
 - 텍스트 프롬프트에서 시작한 독자적인 조선 다크 판타지 시안만 사용한다.
 - 스프라이트는 후처리와 검수를 마친 최종 32×32 PNG로, 로비 배경은 1280×720 PNG로 저장한다.
-- 캐릭터, 적, 투사체와 혼불은 투명 RGBA, 바닥은 불투명 RGB로 저장한다.
+- 캐릭터, 적, 투사체, 혼불과 배경 장식은 투명 RGBA, 바닥은 불투명 RGB로 저장한다.
 - 화면에서는 최근접 보간을 사용하며, 코드와 프로젝트에서 직접 만든 자산에는 MIT License를 적용한다. Google 브랜드 자산은 별도 사용 조건을 따른다.
 
 ## 최종 자산
@@ -17,6 +17,9 @@
 | 봉인 부적 | `desktop-app/src/main/resources/assets/sprites/talisman.png` | 마젠타 제거, 26px 안에 비율 유지, 32×32 RGBA. 축소 후 직사각형과 금색 테두리 확인 | 완료 |
 | 혼불 | `desktop-app/src/main/resources/assets/sprites/soul-flame.png` | 마젠타 제거, 22px 안에 비율 유지, 32×32 RGBA. 바닥과 투사체에서 청백색 불꽃 식별 확인 | 완료 |
 | 달빛 폐허 바닥 | `desktop-app/src/main/resources/assets/sprites/ground.png` | 전체 원본을 최근접 보간으로 32×32 RGB 변환. 8×8 반복 미리보기에서 고대비 경계 없음 확인 | 완료 |
+| 마른 풀 장식 | `desktop-app/src/main/resources/assets/sprites/decoration-dry-grass.png` | 마젠타 제거, 32×32 RGBA. 네 모서리 투명도와 작은 화면의 황갈색 풀 실루엣 확인 | 완료 |
+| 잔돌·깨진 기와 장식 | `desktop-app/src/main/resources/assets/sprites/decoration-rubble.png` | 초록색 제거, 32×32 RGBA. 돌과 전통 기와 조각의 청회색 실루엣 확인 | 완료 |
+| 얕은 균열 장식 | `desktop-app/src/main/resources/assets/sprites/decoration-ground-crack.png` | 초록색 제거, 32×32 RGBA. 깊은 구덩이로 보이지 않는 낮은 대비의 갈라짐 확인 | 완료 |
 | 질풍 무녀 | `desktop-app/src/main/resources/assets/sprites/gale-maiden.png` | 마젠타 제거, 30px 안에 비율 유지, 32×32 RGBA와 투명 모서리 확인 | 완료 |
 | 노란 보물상자 | `desktop-app/src/main/resources/assets/sprites/chest-yellow.png` | 마젠타 제거, 30px 안에 비율 유지, 금색 실루엣 확인 | 완료 |
 | 보라 보물상자 | `desktop-app/src/main/resources/assets/sprites/chest-purple.png` | 초록색 제거, 30px 안에 비율 유지, 노란 상자와 색·잠금 장식 구분 확인 | 완료 |
@@ -27,7 +30,7 @@
 | 혼령 호리병 | `desktop-app/src/main/resources/assets/sprites/spirit-gourd.png` | 마젠타 제거, 28px 안에 비율 유지, 혼불과 호리병 구분 확인 | 완료 |
 | 달빛 대나무 로비 | `desktop-app/src/main/resources/assets/backgrounds/lobby-moonlit-courtyard.png` | 원본을 최근접 방식으로 1280×720 RGB 변환, 대나무·달·풀·안개와 중앙 UI 여백 확인 | 완료 |
 
-투명 자산은 내장 `image_gen`으로 단색 배경 원본을 만든 뒤 설치된 `remove_chroma_key.py`의 border 자동 추출, soft matte, despill을 적용했다. Pillow 12.2.0의 최근접 보간으로 축소했으며 네 투명 모서리, 알파 범위, 픽셀 크기를 자동 검사했다.
+기존 투명 자산은 내장 `image_gen`으로 단색 배경 원본을 만든 뒤 설치된 `remove_chroma_key.py`의 border 자동 추출, soft matte, despill과 Pillow 12.2.0의 최근접 축소를 적용했다. 배경 장식 3종은 같은 투명화 절차 뒤 macOS `sips`로 중심을 잘라 32×32로 축소했고, JDK `ImageIO` 테스트로 크기·알파 채널·네 투명 모서리를 자동 검사한다.
 
 ## 외부 브랜드 자산
 
@@ -146,6 +149,28 @@ Spirit gourd: one dark ceramic gourd flask with an ivory cord and contained pale
 Wide 16:9 original Joseon dark-fantasy ruined courtyard framed by black bamboo and silver grass, a large pale full moon behind mist, broken stone lanterns, central lower negative space for JavaFX controls, crisp limited-palette 16-bit pixel art, no characters or text.
 ```
 
+## 배경 장식 자산 프롬프트
+
+아래 장식은 참조 이미지 없이 내장 `image_gen`에 각각 한 번씩 요청했다. 공통으로 완전히 평평한 단색 크로마키 배경, 그림자·빛 번짐·글자·추가 물체 없음, 위에서 내려다본 단일 16비트 픽셀 아트 피사체, 32×32 축소 가독성과 넉넉한 여백을 지정했다.
+
+### 마른 풀
+
+```text
+One isolated compact irregular tuft of sparse bent ochre, tan and muted-brown dry grass, direct top-down view, restrained dark moonlit palette, crisp hard pixel clusters, perfectly flat #ff00ff backdrop, no magenta in the subject.
+```
+
+### 잔돌·깨진 기와
+
+```text
+One compact harmless ground-debris cluster of small gray stones and two or three broken traditional dark roof-tile fragments, direct top-down view, charcoal and slate with cool moonlit highlights, crisp hard pixel clusters, perfectly flat #00ff00 backdrop, no green in the subject.
+```
+
+### 얕은 균열
+
+```text
+One shallow irregular branching ground crack with a few angular chips, direct top-down view, subtle charcoal, cool-gray and muted-brown pixels, flat rather than a deep pit, crisp hard pixel clusters, perfectly flat #00ff00 backdrop, no green in the subject.
+```
+
 ## 오디오 자산
 
 ### 4차 음향 참고 자료
@@ -181,10 +206,10 @@ python3 tools/generate_audio_assets.py --check-only
 
 ## 공통 검수 결과
 
-1. 기존 다섯 파일과 추가 스프라이트 여덟 파일, 총 13개 스프라이트의 실제 크기 32×32를 확인했다.
+1. 기존 스프라이트 13개와 배경 장식 3개, 총 16개 스프라이트의 실제 크기 32×32를 확인했다.
 2. 모든 전경 자산은 RGBA와 알파 범위 0–255, 네 모서리 알파 0을 확인했다.
 3. 바닥은 8×8로 반복한 미리보기에서 두드러지는 이음선을 찾지 못했다.
-4. 최근접 확대에서 흐림 없이 사냥꾼, 도깨비, 부적, 혼불이 즉시 구분된다.
+4. 이미지 스무딩을 끈 64픽셀 확대에서 사냥꾼, 도깨비, 부적, 혼불과 장식 3종이 즉시 구분된다.
 5. 원작 이미지나 참조 이미지를 입력하지 않았고 독자적인 조선 야행 팔레트와 실루엣을 사용했다.
 6. 새 오디오 14개는 22.05kHz, 16비트 스테레오 PCM이며 무음·클리핑·잘린 표본이 없고 BGM 반복 경계를 통과했다.
 7. 오디오를 재생성하기 전과 후의 SHA-256이 같아 제작 결과가 재현됨을 확인했다.
@@ -198,3 +223,4 @@ python3 tools/generate_audio_assets.py --check-only
 | 2026-08-05 | Google 공식 Sign in assets | 승인된 Google G 아이콘을 로그인 버튼 자산으로 추가 |
 | 2026-08-05 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 36초 로비·48초 전투 BGM과 기본·진화 아이템 공격 효과음 12개를 결정적으로 합성하고 자동 검수 추가 |
 | 2026-08-06 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 외부 표본·선율 없이 다중 오음계 프레이즈 BGM, 종이 플릭·검 휘두름·직접 낙뢰 중심의 역할별 합성기로 14개 음원 재설계 |
+| 2026-08-06 | Codex 내장 `image_gen`, `remove_chroma_key.py`, macOS `sips`, JDK `ImageIO` | 마른 풀·잔돌/깨진 기와·얕은 균열 장식 3종을 생성하고 32×32 투명 PNG 검증 추가 |

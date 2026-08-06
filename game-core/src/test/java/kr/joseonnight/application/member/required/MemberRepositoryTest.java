@@ -58,7 +58,7 @@ class MemberRepositoryTest {
         assertThat(identity.getSubjectHmac()).isEqualTo(SUBJECT_HMAC);
         assertThat(settings.getNickname()).isEqualTo("야행꾼");
         assertThat(settings.isMuted()).isFalse();
-        assertThat(settings.getMusicVolume()).isEqualTo(70);
+        assertThat(settings.getMusicVolume()).isEqualTo(60);
         assertThat(settings.getEffectsVolume()).isEqualTo(70);
         assertThat(settings.getTargetFps()).isEqualTo(TargetFps.FPS_60);
     }

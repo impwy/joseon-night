@@ -6,7 +6,6 @@ import org.springframework.util.Assert;
  * Numeric invariants for one game session.
  */
 public record GameRules(
-        double durationSeconds,
         double playerSpeed,
         double playerRadius,
         double enemySpawnRadius,
@@ -25,7 +24,6 @@ public record GameRules(
 ) {
 
     public GameRules {
-        requirePositive(durationSeconds, "durationSeconds");
         requirePositive(playerSpeed, "playerSpeed");
         requirePositive(playerRadius, "playerRadius");
         requirePositive(enemySpawnRadius, "enemySpawnRadius");
@@ -45,11 +43,10 @@ public record GameRules(
 
     public static GameRules standard() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 760.0,
-                0.75,
+                0.5,
                 55.0,
                 20.0,
                 17.0,

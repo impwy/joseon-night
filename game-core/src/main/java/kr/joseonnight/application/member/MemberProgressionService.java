@@ -44,7 +44,7 @@ public final class MemberProgressionService
 
     @Override
     @Transactional
-    public void unlockFirstVictoryRewards(Long memberId) {
+    public void unlockFirstDefeatRewards(Long memberId) {
         Member member = validationService.requireMember(memberId);
         Instant now = Instant.now(clock);
         characterCatalogFinder.findCatalog().characters().stream()

@@ -1,8 +1,8 @@
 package kr.joseonnight.desktop.view;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -56,6 +56,7 @@ public final class GameView extends StackPane {
     private final DesktopApiClient desktopApiClient;
     private final Runnable restartGame;
     private final Runnable returnToLobby;
+    private final Runnable toggleSettings;
     private final SpriteAtlas sprites = new SpriteAtlas();
     private final Canvas canvas = new Canvas();
     private final VBox lobbyPanel = new VBox(16);
@@ -68,6 +69,7 @@ public final class GameView extends StackPane {
     private final Label killLabel = hudLabel();
     private final Label barrierLabel = hudLabel();
     private final Label loadoutLabel = hudLabel();
+    private final Button settingsButton = actionButton("설정");
     private final Label connectionLabel = new Label();
     private final Label resultTitle = new Label();
     private final Label resultSummary = new Label();
@@ -75,34 +77,39 @@ public final class GameView extends StackPane {
     private final FrameRateLimiter frameRateLimiter = new FrameRateLimiter(TargetFps.FPS_60);
 
     private List<String> displayedOptionIds = List.of();
-    private boolean up;
-    private boolean down;
-    private boolean left;
-    private boolean right;
+    private final KeyState keyState = new KeyState();
     private boolean inputEnabled;
     private long previousFrameNanos;
     private double accumulatorSeconds;
 
     public GameView(DesktopApiClient desktopApiClient) {
-        this(desktopApiClient, desktopApiClient::startNewGame, () -> { });
+        this(desktopApiClient, desktopApiClient::startNewGame, () -> { }, () -> { });
     }
 
-    @SuppressFBWarnings(
-            value = "EI_EXPOSE_REP2",
-            justification = "The JavaFX view intentionally keeps the Spring-owned desktop API client.")
     public GameView(
             DesktopApiClient desktopApiClient,
             Runnable restartGame,
             Runnable returnToLobby) {
-        this.desktopApiClient = desktopApiClient;
-        this.restartGame = restartGame;
-        this.returnToLobby = returnToLobby;
+        this(desktopApiClient, restartGame, returnToLobby, () -> { });
+    }
+
+    public GameView(
+            DesktopApiClient desktopApiClient,
+            Runnable restartGame,
+            Runnable returnToLobby,
+            Runnable toggleSettings) {
+        this.desktopApiClient = Objects.requireNonNull(desktopApiClient, "desktopApiClient");
+        this.restartGame = Objects.requireNonNull(restartGame, "restartGame");
+        this.returnToLobby = Objects.requireNonNull(returnToLobby, "returnToLobby");
+        this.toggleSettings = Objects.requireNonNull(toggleSettings, "toggleSettings");
 
         setPrefSize(1280, 720);
         setStyle("-fx-background-color: #111923;");
         canvas.widthProperty().bind(widthProperty());
         canvas.heightProperty().bind(heightProperty());
         canvas.setMouseTransparent(true);
+        canvas.widthProperty().addListener((ignored, oldValue, newValue) -> reportViewportSize());
+        canvas.heightProperty().addListener((ignored, oldValue, newValue) -> reportViewportSize());
 
         configureLobby();
         configureHud();
@@ -111,7 +118,7 @@ public final class GameView extends StackPane {
         configureResultPanel();
 
         StackPane overlay = new StackPane(
-                lobbyPanel, hudPanel, upgradePanel, resultPanel, connectionLabel);
+                lobbyPanel, hudPanel, upgradePanel, resultPanel, settingsButton, connectionLabel);
         overlay.setPickOnBounds(false);
         getChildren().addAll(canvas, overlay);
 
@@ -152,11 +159,21 @@ public final class GameView extends StackPane {
         frameRateLimiter.setTargetFps(targetFps);
     }
 
+    public double viewportWidth() {
+        return canvas.getWidth() > 0.0 ? canvas.getWidth() : 1280.0;
+    }
+
+    public double viewportHeight() {
+        return canvas.getHeight() > 0.0 ? canvas.getHeight() : 720.0;
+    }
+
     public void clearInput() {
-        up = false;
-        down = false;
-        left = false;
-        right = false;
+        keyState.clearMovement();
+        desktopApiClient.setInput(InputState.idle());
+    }
+
+    public void clearInputAfterFocusLoss() {
+        keyState.clearAfterFocusLoss();
         desktopApiClient.setInput(InputState.idle());
     }
 
@@ -167,11 +184,19 @@ public final class GameView extends StackPane {
         }
     }
 
+    private void reportViewportSize() {
+        double width = canvas.getWidth();
+        double height = canvas.getHeight();
+        if (width > 0.0 && height > 0.0) {
+            desktopApiClient.setViewportSize(width, height);
+        }
+    }
+
     private void configureLobby() {
         Label title = new Label("조선 야행");
         title.setStyle(TITLE_STYLE);
 
-        Label subtitle = new Label("달빛 폐허에서 그림자 도깨비를 피해 5분을 버티세요.");
+        Label subtitle = new Label("달빛 폐허에서 쓰러질 때까지 그림자 도깨비에 맞서세요.");
         subtitle.setStyle(TEXT_STYLE);
         subtitle.setWrapText(true);
         subtitle.setMaxWidth(440);
@@ -195,8 +220,16 @@ public final class GameView extends StackPane {
     }
 
     private void configureHud() {
+        settingsButton.setStyle("-fx-background-color: #32465c; -fx-text-fill: white;"
+                + "-fx-font-size: 13px; -fx-background-radius: 7; -fx-padding: 6 12 6 12;");
+        settingsButton.setOnAction(ignored -> toggleSettings.run());
         hudPanel.getChildren().addAll(
-                timeLabel, levelLabel, experienceLabel, killLabel, barrierLabel, loadoutLabel);
+                timeLabel,
+                levelLabel,
+                experienceLabel,
+                killLabel,
+                barrierLabel,
+                loadoutLabel);
         loadoutLabel.setMaxWidth(520.0);
         loadoutLabel.setWrapText(true);
         hudPanel.setAlignment(Pos.CENTER_LEFT);
@@ -206,6 +239,8 @@ public final class GameView extends StackPane {
         hudPanel.setMouseTransparent(true);
         StackPane.setAlignment(hudPanel, Pos.TOP_LEFT);
         StackPane.setMargin(hudPanel, new Insets(18));
+        StackPane.setAlignment(settingsButton, Pos.TOP_RIGHT);
+        StackPane.setMargin(settingsButton, new Insets(18));
     }
 
     private void configureConnectionStatus() {
@@ -214,7 +249,7 @@ public final class GameView extends StackPane {
         connectionLabel.setMaxWidth(460);
         connectionLabel.setMouseTransparent(true);
         StackPane.setAlignment(connectionLabel, Pos.TOP_RIGHT);
-        StackPane.setMargin(connectionLabel, new Insets(18));
+        StackPane.setMargin(connectionLabel, new Insets(64, 18, 18, 18));
     }
 
     private void configureUpgradePanel() {
@@ -274,7 +309,7 @@ public final class GameView extends StackPane {
                 || snapshot.phase() == GamePhase.LEVEL_UP
                 || snapshot.phase() == GamePhase.CHEST_REWARD;
         if (acceptsHeldInput) {
-            desktopApiClient.setInput(new InputState(up, down, left, right));
+            desktopApiClient.setInput(keyState.input());
         }
         if (snapshot.phase() != GamePhase.RUNNING) {
             accumulatorSeconds = 0.0;
@@ -320,21 +355,20 @@ public final class GameView extends StackPane {
         boolean choosingUpgrade = phase == GamePhase.LEVEL_UP;
         boolean choosingChestReward = phase == GamePhase.CHEST_REWARD;
         boolean choosingReward = choosingUpgrade || choosingChestReward;
-        boolean finished = phase == GamePhase.VICTORY
-                || phase == GamePhase.DEFEAT
-                || phase == GamePhase.ABANDONED;
+        boolean finished = phase == GamePhase.DEFEAT || phase == GamePhase.ABANDONED;
 
         lobbyPanel.setVisible(lobby);
         lobbyPanel.setManaged(lobby);
         hudPanel.setVisible(active);
         hudPanel.setManaged(active);
+        settingsButton.setVisible(active);
+        settingsButton.setManaged(active);
         upgradePanel.setVisible(choosingReward);
         upgradePanel.setManaged(choosingReward);
         resultPanel.setVisible(finished);
         resultPanel.setManaged(finished);
 
-        int seconds = Math.max(0, (int) Math.ceil(snapshot.remainingSeconds()));
-        timeLabel.setText("남은 시간  %02d:%02d".formatted(seconds / 60, seconds % 60));
+        timeLabel.setText(survivalTimeText(snapshot.elapsedSeconds()));
         levelLabel.setText("레벨  %d".formatted(snapshot.level()));
         experienceLabel.setText("혼불  %d / %d".formatted(
                 snapshot.experience(), snapshot.experienceToNextLevel()));
@@ -353,7 +387,7 @@ public final class GameView extends StackPane {
             rebuildRewardChoices(snapshot.pendingChestOptions(), true);
         }
         if (finished) {
-            resultTitle.setText(phase == GamePhase.VICTORY ? "새벽을 맞았습니다" : "야행이 끝났습니다");
+            resultTitle.setText(phase == GamePhase.DEFEAT ? "패배" : "야행 이탈");
             resultSummary.setText("생존 시간 %.1f초%n그림자 도깨비 %d마리 퇴치"
                     .formatted(snapshot.elapsedSeconds(), snapshot.killCount()));
         }
@@ -433,6 +467,7 @@ public final class GameView extends StackPane {
         double cameraX = player == null ? 0.0 : player.x();
         double cameraY = player == null ? 0.0 : player.y();
         drawGround(graphics, width, height, cameraX, cameraY);
+        drawDecorations(graphics, width, height, cameraX, cameraY);
 
         for (ChestSnapshot chest : snapshot.chests()) {
             drawChest(graphics, chest, width, height, cameraX, cameraY);
@@ -457,7 +492,12 @@ public final class GameView extends StackPane {
             drawPlayer(graphics, player, playerKind, width, height, cameraX, cameraY);
         }
         for (ChestIndicatorSnapshot indicator : snapshot.chestIndicators()) {
-            drawChestIndicator(graphics, indicator, width, height);
+            snapshot.chests().stream()
+                    .filter(chest -> chest.id() == indicator.chestId())
+                    .filter(chest -> isChestOutsideViewport(
+                            chest, width, height, cameraX, cameraY))
+                    .findFirst()
+                    .ifPresent(ignored -> drawChestIndicator(graphics, indicator, width, height));
         }
     }
 
@@ -489,6 +529,44 @@ public final class GameView extends StackPane {
                     graphics.setStroke(Color.web("#253747", 0.55));
                     graphics.strokeRect(x, y, GROUND_TILE_SIZE, GROUND_TILE_SIZE);
                 }
+            }
+        }
+    }
+
+    private void drawDecorations(
+            GraphicsContext graphics,
+            double width,
+            double height,
+            double cameraX,
+            double cameraY) {
+        double padding = DecorationLayout.DRAW_SIZE / 2.0;
+        int firstCellX = (int) Math.floor(
+                (cameraX - width / 2.0 - padding) / DecorationLayout.CELL_SIZE);
+        int lastCellX = (int) Math.floor(
+                (cameraX + width / 2.0 + padding) / DecorationLayout.CELL_SIZE);
+        int firstCellY = (int) Math.floor(
+                (cameraY - height / 2.0 - padding) / DecorationLayout.CELL_SIZE);
+        int lastCellY = (int) Math.floor(
+                (cameraY + height / 2.0 + padding) / DecorationLayout.CELL_SIZE);
+
+        for (int cellY = firstCellY; cellY <= lastCellY; cellY++) {
+            for (int cellX = firstCellX; cellX <= lastCellX; cellX++) {
+                DecorationLayout.Placement placement = DecorationLayout.placementAt(cellX, cellY);
+                if (placement == null) {
+                    continue;
+                }
+                Image decoration = sprites.decoration(placement.kind());
+                if (decoration == null) {
+                    continue;
+                }
+                double screenX = width / 2.0 + placement.worldX() - cameraX;
+                double screenY = height / 2.0 + placement.worldY() - cameraY;
+                graphics.drawImage(
+                        decoration,
+                        screenX - padding,
+                        screenY - padding,
+                        DecorationLayout.DRAW_SIZE,
+                        DecorationLayout.DRAW_SIZE);
             }
         }
     }
@@ -684,6 +762,29 @@ public final class GameView extends StackPane {
         graphics.fillText("%dm".formatted(Math.max(0, Math.round(indicator.distance()))), x - 13, y + 25);
     }
 
+    static boolean isChestOutsideViewport(
+            ChestSnapshot chest,
+            double width,
+            double height,
+            double cameraX,
+            double cameraY) {
+        if (Boolean.TRUE.equals(chest.opened())) {
+            return false;
+        }
+        double screenX = width / 2.0 + chest.x() - cameraX;
+        double screenY = height / 2.0 + chest.y() - cameraY;
+        double halfSize = CHEST_SIZE / 2.0;
+        return screenX + halfSize < 0.0
+                || screenX - halfSize > width
+                || screenY + halfSize < 0.0
+                || screenY - halfSize > height;
+    }
+
+    static String survivalTimeText(double elapsedSeconds) {
+        int seconds = Math.max(0, (int) Math.floor(elapsedSeconds));
+        return "생존 시간  %02d:%02d".formatted(seconds / 60, seconds % 60);
+    }
+
     private static void drawCentered(
             GraphicsContext graphics,
             Image image,
@@ -756,20 +857,80 @@ public final class GameView extends StackPane {
     }
 
     private void updateKey(KeyEvent event, boolean pressed) {
+        if (event.getCode() == KeyCode.ESCAPE) {
+            boolean firstPress = keyState.updateEscape(pressed);
+            if (isActiveGamePhase(desktopApiClient.snapshot().phase())) {
+                if (firstPress) {
+                    toggleSettings.run();
+                }
+                event.consume();
+            }
+            return;
+        }
         if (!inputEnabled) {
             return;
         }
-        KeyCode code = event.getCode();
-        boolean handled = true;
-        switch (code) {
-            case W -> up = pressed;
-            case S -> down = pressed;
-            case A -> left = pressed;
-            case D -> right = pressed;
-            default -> handled = false;
-        }
+        boolean handled = keyState.updateMovement(event.getCode(), pressed);
         if (handled) {
             event.consume();
+        }
+    }
+
+    private static boolean isActiveGamePhase(GamePhase phase) {
+        return phase == GamePhase.RUNNING
+                || phase == GamePhase.LEVEL_UP
+                || phase == GamePhase.CHEST_REWARD;
+    }
+
+    static final class KeyState {
+        private boolean up;
+        private boolean down;
+        private boolean left;
+        private boolean right;
+        private boolean escapePressed;
+
+        boolean updateEscape(boolean pressed) {
+            boolean firstPress = pressed && !escapePressed;
+            escapePressed = pressed;
+            return firstPress;
+        }
+
+        boolean updateMovement(KeyCode code, boolean pressed) {
+            return switch (code) {
+                case W -> {
+                    up = pressed;
+                    yield true;
+                }
+                case S -> {
+                    down = pressed;
+                    yield true;
+                }
+                case A -> {
+                    left = pressed;
+                    yield true;
+                }
+                case D -> {
+                    right = pressed;
+                    yield true;
+                }
+                default -> false;
+            };
+        }
+
+        void clearMovement() {
+            up = false;
+            down = false;
+            left = false;
+            right = false;
+        }
+
+        void clearAfterFocusLoss() {
+            clearMovement();
+            escapePressed = false;
+        }
+
+        InputState input() {
+            return new InputState(up, down, left, right);
         }
     }
 

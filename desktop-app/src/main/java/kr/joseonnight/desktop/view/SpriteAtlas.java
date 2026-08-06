@@ -18,6 +18,9 @@ final class SpriteAtlas {
     private final Image spiritGourd = load("spirit-gourd.png");
     private final Image soulFlame = load("soul-flame.png");
     private final Image ground = load("ground.png");
+    private final Image dryGrass = load("decoration-dry-grass.png");
+    private final Image rubble = load("decoration-rubble.png");
+    private final Image groundCrack = load("decoration-ground-crack.png");
     private final Image yellowChest = load("chest-yellow.png");
     private final Image purpleChest = load("chest-purple.png");
 
@@ -56,6 +59,14 @@ final class SpriteAtlas {
 
     Image ground() {
         return ground;
+    }
+
+    Image decoration(DecorationLayout.Kind kind) {
+        return switch (kind) {
+            case DRY_GRASS -> dryGrass;
+            case RUBBLE -> rubble;
+            case GROUND_CRACK -> groundCrack;
+        };
     }
 
     Image chest(String type) {

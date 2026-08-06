@@ -13,6 +13,8 @@ import com.linecorp.armeria.server.websocket.WebSocketService;
 import io.netty.util.AttributeKey;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -144,6 +146,8 @@ public final class GameWebSocketApi {
                 switch (type) {
                     case "START_GAME" -> startGame(requestId, payload);
                     case "INPUT_CHANGED" -> changeInput(requestId, payload);
+                    case "VIEWPORT_CHANGED" -> changeViewport(payload);
+                    case "SET_GAME_PAUSED" -> setGamePaused(requestId, payload);
                     case "CHOOSE_LEVEL_UP" -> chooseLevelUp(requestId, payload);
                     case "CHOOSE_CHEST_REWARD" -> chooseChestReward(requestId, payload);
                     default -> sendError("UNKNOWN_MESSAGE_TYPE", "지원하지 않는 게임 명령입니다.", requestId);
@@ -159,7 +163,11 @@ public final class GameWebSocketApi {
             StartGamePayload command = readAndValidate(payload, StartGamePayload.class);
             CharacterType character = CharacterType.fromId(command.characterId());
             closeCurrentSession();
-            attach(gameSessions.startNewGame(memberId, character));
+            attach(gameSessions.startNewGame(
+                    memberId,
+                    character,
+                    command.viewportWidth(),
+                    command.viewportHeight()));
             sendSnapshot(requestId, false, handle.snapshot());
         }
 
@@ -189,6 +197,28 @@ public final class GameWebSocketApi {
             if (!accepted) {
                 sendError("STALE_INPUT", "이미 처리한 입력 순서입니다.", requestId);
             }
+        }
+
+        private void changeViewport(JsonNode payload) {
+            ViewportPayload command = readAndValidate(payload, ViewportPayload.class);
+            GameSessionHandle current = requireSession();
+            gameSessions.setViewport(
+                    memberId,
+                    current.sessionId(),
+                    current.connectionId(),
+                    command.viewportWidth(),
+                    command.viewportHeight());
+        }
+
+        private void setGamePaused(String requestId, JsonNode payload) {
+            SetGamePausedPayload command = readAndValidate(payload, SetGamePausedPayload.class);
+            GameSessionHandle current = requireSession();
+            gameSessions.setPaused(
+                    memberId,
+                    current.sessionId(),
+                    current.connectionId(),
+                    command.paused());
+            sendSnapshot(requestId, false, gameSessions.snapshot(memberId, current.sessionId()));
         }
 
         private void chooseLevelUp(String requestId, JsonNode payload) {
@@ -329,8 +359,7 @@ public final class GameWebSocketApi {
     }
 
     private static boolean isResult(GamePhase phase) {
-        return phase == GamePhase.VICTORY
-                || phase == GamePhase.DEFEAT
+        return phase == GamePhase.DEFEAT
                 || phase == GamePhase.ABANDONED;
     }
 
@@ -338,8 +367,19 @@ public final class GameWebSocketApi {
     }
 
     private record StartGamePayload(
-            @NotBlank @Size(max = 64) String characterId
+            @NotBlank @Size(max = 64) String characterId,
+            @NotNull @Min(640) @Max(3840) Integer viewportWidth,
+            @NotNull @Min(360) @Max(2160) Integer viewportHeight
     ) {
+    }
+
+    private record ViewportPayload(
+            @NotNull @Min(640) @Max(3840) Integer viewportWidth,
+            @NotNull @Min(360) @Max(2160) Integer viewportHeight
+    ) {
+    }
+
+    private record SetGamePausedPayload(@NotNull Boolean paused) {
     }
 
     private record InputChangedPayload(

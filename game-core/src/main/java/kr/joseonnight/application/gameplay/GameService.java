@@ -36,6 +36,7 @@ import kr.joseonnight.domain.gameplay.GamePhase;
 import kr.joseonnight.domain.gameplay.GameRules;
 import kr.joseonnight.domain.gameplay.GameSession;
 import kr.joseonnight.domain.gameplay.GameState;
+import kr.joseonnight.domain.gameplay.GameViewport;
 import kr.joseonnight.domain.gameplay.InputState;
 import kr.joseonnight.domain.gameplay.UpgradeType;
 import kr.joseonnight.domain.playrecord.PlayOutcome;
@@ -183,15 +184,21 @@ public final class GameService implements GameRunner, GameSessionManager {
     }
 
     @Override
-    public GameSessionHandle startNewGame(String memberId, CharacterType character) {
+    public GameSessionHandle startNewGame(
+            String memberId,
+            CharacterType character,
+            int viewportWidth,
+            int viewportHeight
+    ) {
         String owner = requireText(memberId, "memberId");
         CharacterType selectedCharacter = Objects.requireNonNull(character, "character");
+        GameViewport viewport = new GameViewport(viewportWidth, viewportHeight);
         ensureCharacterUnlocked(owner, selectedCharacter);
         ManagedGameSession managed = new ManagedGameSession(
                 owner,
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
-                GameSession.running(rules, nextManagedSeed(), selectedCharacter));
+                GameSession.running(rules, nextManagedSeed(), selectedCharacter, viewport));
         ManagedGameSession previous = null;
         synchronized (registryLock) {
             String previousSessionId = currentSessionByMember.put(owner, managed.sessionId);
@@ -205,6 +212,14 @@ public final class GameService implements GameRunner, GameSessionManager {
             retire(previous);
         }
         return managed.handle();
+    }
+
+    public GameSessionHandle startNewGame(String memberId, CharacterType character) {
+        return startNewGame(
+                memberId,
+                character,
+                GameViewport.DEFAULT_WIDTH,
+                GameViewport.DEFAULT_HEIGHT);
     }
 
     @Override
@@ -255,6 +270,36 @@ public final class GameService implements GameRunner, GameSessionManager {
             managed.session.setInput(Objects.requireNonNull(input, "input"));
             managed.latestCommandSequence = commandSequence;
             return true;
+        }
+    }
+
+    @Override
+    public void setViewport(
+            String memberId,
+            String sessionId,
+            String connectionId,
+            int viewportWidth,
+            int viewportHeight
+    ) {
+        GameViewport viewport = new GameViewport(viewportWidth, viewportHeight);
+        ManagedGameSession managed = requireSession(memberId, sessionId);
+        synchronized (managed.monitor) {
+            ensureActiveConnectionLocked(managed, connectionId);
+            managed.session.setViewport(viewport);
+        }
+    }
+
+    @Override
+    public void setPaused(
+            String memberId,
+            String sessionId,
+            String connectionId,
+            boolean paused
+    ) {
+        ManagedGameSession managed = requireSession(memberId, sessionId);
+        synchronized (managed.monitor) {
+            ensureActiveConnectionLocked(managed, connectionId);
+            managed.session.setPaused(paused);
         }
     }
 
@@ -494,7 +539,6 @@ public final class GameService implements GameRunner, GameSessionManager {
 
     private static PlayOutcome toPlayOutcome(GamePhase phase) {
         return switch (phase) {
-            case VICTORY -> PlayOutcome.VICTORY;
             case DEFEAT -> PlayOutcome.DEFEAT;
             case ABANDONED -> PlayOutcome.ABANDONED;
             default -> throw new IllegalArgumentException("The game has not ended: " + phase);
@@ -538,16 +582,15 @@ public final class GameService implements GameRunner, GameSessionManager {
     }
 
     private static boolean isResult(GamePhase phase) {
-        return phase == GamePhase.VICTORY
-                || phase == GamePhase.DEFEAT
+        return phase == GamePhase.DEFEAT
                 || phase == GamePhase.ABANDONED;
     }
 
     private static GameSnapshot toSnapshot(GameState state) {
         return new GameSnapshot(
                 state.phase(),
+                state.paused(),
                 state.elapsedSeconds(),
-                state.remainingSeconds(),
                 state.level(),
                 state.experience(),
                 state.experienceToNextLevel(),

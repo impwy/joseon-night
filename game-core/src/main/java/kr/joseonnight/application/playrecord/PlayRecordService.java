@@ -54,8 +54,8 @@ public final class PlayRecordService implements PlayRecorder, PlayRecordFinder, 
         ));
         PlayRecordView view = PlayRecordView.from(saved);
         eventPublisher.publish(view);
-        if (view.outcome() == PlayOutcome.VICTORY) {
-            progressionManager.unlockFirstVictoryRewards(view.memberId());
+        if (view.outcome() == PlayOutcome.DEFEAT) {
+            progressionManager.unlockFirstDefeatRewards(view.memberId());
         }
         return view;
     }

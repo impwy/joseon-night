@@ -28,7 +28,8 @@ class GameServiceTest {
 
         GameSnapshot snapshot = game.snapshot();
         assertEquals(GamePhase.RUNNING, snapshot.phase());
-        assertEquals(300.0, snapshot.remainingSeconds(), TOLERANCE);
+        assertEquals(0.0, snapshot.elapsedSeconds(), TOLERANCE);
+        assertFalse(snapshot.paused());
         assertEquals(1, snapshot.level());
         assertTrue(snapshot.enemies().isEmpty());
     }
@@ -140,73 +141,13 @@ class GameServiceTest {
     }
 
     @Test
-    void survivingTheConfiguredDurationWins() {
-        GameRules rules = new GameRules(
-                0.05,
-                240.0,
-                18.0,
-                760.0,
-                10.0,
-                55.0,
-                20.0,
-                17.0,
-                520.0,
-                20.0,
-                0.65,
-                100.0,
-                5,
-                10,
-                10,
-                10
-        );
-        GameService game = runningGame(rules, 53L);
-
-        game.tick(0.05);
-
-        assertEquals(GamePhase.VICTORY, game.snapshot().phase());
-        assertEquals(0.0, game.snapshot().remainingSeconds(), TOLERANCE);
-    }
-
-    @Test
-    void standardFiveMinutesWinsAfterExactlyEighteenThousandFixedTicks() {
+    void gameContinuesBeyondFiveMinutesUntilThePlayerIsDefeated() {
         GameService game = runningGame(quietRules(), 53L);
 
-        for (int tick = 0; tick < 18_000; tick++) {
-            game.tick(1.0 / 60.0);
-        }
+        game.tick(301.0);
 
-        assertEquals(GamePhase.VICTORY, game.snapshot().phase());
-        assertEquals(300.0, game.snapshot().elapsedSeconds(), TOLERANCE);
-        assertEquals(0.0, game.snapshot().remainingSeconds(), TOLERANCE);
-    }
-
-    @Test
-    void collisionOnTheFinalTickDefeatsBeforeVictory() {
-        GameRules rules = new GameRules(
-                1.0,
-                240.0,
-                18.0,
-                30.0,
-                1.0,
-                0.0,
-                20.0,
-                17.0,
-                520.0,
-                20.0,
-                0.65,
-                100.0,
-                5,
-                10,
-                10,
-                10
-        );
-        GameService game = runningGame(rules, 57L);
-
-        game.tick(0.5);
-        game.tick(0.5);
-
-        assertEquals(GamePhase.VICTORY, game.snapshot().phase());
-        assertEquals(1.0, game.snapshot().elapsedSeconds(), TOLERANCE);
+        assertEquals(GamePhase.RUNNING, game.snapshot().phase());
+        assertEquals(301.0, game.snapshot().elapsedSeconds(), TOLERANCE);
     }
 
     @Test
@@ -278,7 +219,6 @@ class GameServiceTest {
 
     private static GameRules quietRules() {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 760.0,
@@ -306,7 +246,6 @@ class GameServiceTest {
             int experienceToNextLevel
     ) {
         return new GameRules(
-                300.0,
                 240.0,
                 18.0,
                 spawnRadius,

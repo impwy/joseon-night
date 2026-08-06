@@ -2,7 +2,7 @@
 
 조선 다크 판타지를 배경으로 한 독자적인 생존 액션 게임입니다. JavaFX 프런트엔드와 Spring Boot 백엔드를 각각 실행하며, 회원 기능은 Tomcat REST API로, 실시간 게임은 Armeria WebSocket으로 통신합니다.
 
-Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 5분 동안 그림자 도깨비를 피합니다. 능력 강화와 아이템 보상을 고르고 보물상자에서 진화하며, 서버가 시간·점수·승패를 계산합니다. 캐릭터 고유 스킬이 막지 않은 적 충돌은 즉시 패배입니다.
+Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 쓰러질 때까지 그림자 도깨비와 맞서 싸웁니다. 능력 강화와 아이템 보상을 고르고 주기적으로 생성되는 보물상자에서 진화하며, 서버가 생존 시간·점수·패배를 계산합니다. 캐릭터 고유 스킬이 막지 못한 적 충돌은 즉시 패배입니다.
 
 ## 첫 콘텐츠
 
@@ -12,8 +12,8 @@ Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 5분 
 | 아이템 | 봉인 부적 외 5종 | 자동 투사체 또는 즉시 낙뢰, 5레벨 재료 두 개로 진화 |
 | 적 | 그림자 도깨비 | 플레이어를 직선 추적 |
 | 경험치 | 혼불 | 적 사망 시 생성, 범위 안에서 수집 |
-| 상자 | 노란 상자·보라 상자 | 아이템 강화 또는 진화, 선택 중 전체 일시정지 |
-| 맵 | 달빛 폐허 | 로비의 대나무·달·풀·안개 배경과 전투의 반복 폐허 바닥 |
+| 상자 | 노란 상자·보라 상자 | 시작 5개와 60초마다 생성되는 아이템 강화·진화 보상 |
+| 맵 | 달빛 폐허 | 로비 배경과 반복 폐허 바닥, 고정 좌표의 비충돌 장식 |
 
 레벨업하면 일반 능력 강화가 최소 하나 포함되고, 아이템 획득·강화를 합친 서로 다른 선택지 최대 3개가 제시됩니다. 선택하는 동안 시간과 전투가 모두 멈춥니다.
 
@@ -42,7 +42,7 @@ joseon-night
 
 `game-core`는 Splearn과 같은 실용적 헥사고날 패키지 구조를 사용합니다. JPA 포트는 `application.<도메인>.required`에서 `JpaRepository`를 직접 상속하고 Spring Data가 구현합니다. 웹 API는 `adapter.webapi/memberapi`, `rankingapi`, 인증은 `adapter.security`, Kafka는 `adapter.integration.messaging`에 둡니다. 영속 엔티티는 PostgreSQL에 저장하고 60Hz `GameSession`은 메모리에 유지합니다.
 
-`desktop-app` 운영 코드는 `game-core` 프로젝트에 컴파일·런타임 의존하지 않습니다. 시스템 브라우저에서 Google 로그인을 마치고, JavaFX는 입력과 선택만 WebSocket으로 전송하며 반환된 불변 화면 상태를 그립니다. 추후 React 게임이 추가되면 `adapter.webapi.gameapi`가 같은 application provided 포트를 사용합니다.
+`desktop-app` 운영 코드는 `game-core` 프로젝트에 컴파일·런타임 의존하지 않습니다. 시스템 브라우저에서 Google 로그인을 마치고, JavaFX는 입력·선택·뷰포트·일시정지 요청만 WebSocket으로 전송하며 반환된 불변 화면 상태를 그립니다. 추후 React 게임이 추가되면 `adapter.webapi.gameapi`가 같은 application provided 포트를 사용합니다.
 
 ## 실행
 
@@ -70,6 +70,8 @@ cp .env.example .env
 
 `GameCoreApplication`이 PostgreSQL·Redis·Kafka Compose 서비스를 준비하고 Tomcat을 `127.0.0.1:8080`, Armeria를 `127.0.0.1:8081`에 엽니다. `DesktopApplication`은 1280×720 크기 조절 가능 창을 열며 이동 키는 `W`, `A`, `S`, `D`입니다.
 
+전투 중 HUD 설정 버튼 또는 `Esc`로 설정을 열면 서버 게임도 함께 일시정지합니다.
+
 인프라 상태는 다음 명령으로 확인할 수 있습니다.
 
 ```bash
@@ -88,7 +90,7 @@ Armeria 상태 확인은 로컬 주소 `127.0.0.1:8081`에서 제공합니다.
 curl http://127.0.0.1:8081/internal/healthcheck
 ```
 
-게임 시작·입력·레벨업·상자 선택은 인증된 Armeria WebSocket으로 처리합니다. 클라이언트가 임의 시간이나 점수를 전송하는 REST tick API는 제공하지 않습니다.
+게임 시작·입력·뷰포트·일시정지·레벨업·상자 선택은 인증된 Armeria WebSocket으로 처리합니다. 클라이언트가 임의 시간이나 점수를 전송하는 REST tick API는 제공하지 않습니다.
 
 ## 검증
 

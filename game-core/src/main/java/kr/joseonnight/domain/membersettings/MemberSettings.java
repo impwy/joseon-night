@@ -19,7 +19,8 @@ import org.springframework.util.Assert;
 @NoArgsConstructor(access = PROTECTED)
 public class MemberSettings extends AbstractEntity {
 
-    private static final int DEFAULT_VOLUME = 70;
+    private static final int DEFAULT_MUSIC_VOLUME = 60;
+    private static final int DEFAULT_EFFECTS_VOLUME = 70;
     private static final TargetFps DEFAULT_TARGET_FPS = TargetFps.FPS_60;
 
     @Column(name = "member_id", nullable = false, unique = true)
@@ -48,8 +49,8 @@ public class MemberSettings extends AbstractEntity {
     private MemberSettings(Long memberId, String nickname, Instant now) {
         this.memberId = Objects.requireNonNull(memberId, "memberId");
         this.nickname = validateNickname(nickname);
-        musicVolume = DEFAULT_VOLUME;
-        effectsVolume = DEFAULT_VOLUME;
+        musicVolume = DEFAULT_MUSIC_VOLUME;
+        effectsVolume = DEFAULT_EFFECTS_VOLUME;
         targetFps = DEFAULT_TARGET_FPS;
         updatedAt = Objects.requireNonNull(now, "now");
     }

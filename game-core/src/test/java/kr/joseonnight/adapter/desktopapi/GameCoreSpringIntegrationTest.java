@@ -22,6 +22,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 
 class GameCoreSpringIntegrationTest {
@@ -43,6 +44,7 @@ class GameCoreSpringIntegrationTest {
                         "--spring.datasource.username=sa",
                         "--spring.datasource.password=",
                         "--spring.jpa.hibernate.ddl-auto=validate",
+                        "--spring.data.redis.database=15",
                         "--spring.kafka.listener.auto-startup=false",
                         "--joseon-night.messaging.outbox-initial-delay-millis=3600000")) {
             server = context.getBean(Server.class);
@@ -56,6 +58,9 @@ class GameCoreSpringIntegrationTest {
                     .isInstanceOf(ConstraintViolationException.class);
 
             assertInfrastructureBeans(context);
+            StringRedisTemplate redis = context.getBean(StringRedisTemplate.class);
+            redis.delete("ranking:survival:all:v1");
+            redis.delete("ranking:kills:all:v1");
 
             int gamePort = server.activeLocalPort(SessionProtocol.HTTP);
             var webServer = Objects.requireNonNull(

@@ -9,6 +9,8 @@ import kr.joseonnight.application.member.provided.MemberRegister;
 import kr.joseonnight.application.member.provided.MemberRegistrationInfo;
 import kr.joseonnight.application.member.provided.MemberView;
 import kr.joseonnight.application.member.required.MemberCache;
+import kr.joseonnight.application.member.required.MemberCharacterRepository;
+import kr.joseonnight.application.member.required.MemberItemRepository;
 import kr.joseonnight.application.playrecord.provided.PlayRecordInfo;
 import kr.joseonnight.application.playrecord.provided.PlayRecordView;
 import kr.joseonnight.application.playrecord.provided.PlayRecorder;
@@ -36,10 +38,16 @@ class PlayRecordApplicationServiceTest {
     private MemberProgressionFinder progressionFinder;
 
     @Autowired
+    private MemberCharacterRepository characterRepository;
+
+    @Autowired
+    private MemberItemRepository itemRepository;
+
+    @Autowired
     private OutboxEventRepository outboxRepository;
 
     @Test
-    void providedPortsPersistOneRecordAndOutboxAndUnlockFirstVictoryRewards() {
+    void providedPortsPersistOneRecordAndOutboxAndUnlockFirstDefeatRewards() {
         MemberView member = memberRegister.register(new MemberRegistrationInfo(
                 "b".repeat(64),
                 "달그림자"
@@ -52,8 +60,8 @@ class PlayRecordApplicationServiceTest {
                 10_000L,
                 25,
                 7,
-                PlayOutcome.VICTORY,
-                300_000L,
+                PlayOutcome.DEFEAT,
+                412_000L,
                 Map.of("seal-talisman", 5),
                 true
         );
@@ -65,5 +73,75 @@ class PlayRecordApplicationServiceTest {
         assertThat(outboxRepository.count()).isEqualTo(1L);
         assertThat(progressionFinder.unlockedCharacterIds(member.id()))
                 .containsExactly("dokkaebi-hunter", "gale-shaman");
+        assertThat(itemRepository.existsByMemberIdAndItemId(member.id(), "flame-fan"))
+                .isTrue();
+    }
+
+    @Test
+    void repeatedDefeatsKeepCharacterAndStartingItemUnlocksIdempotent() {
+        MemberView member = memberRegister.register(new MemberRegistrationInfo(
+                "e".repeat(64),
+                "바람달"
+        ));
+
+        playRecorder.record(defeat(member.id(), Instancio.create(UUID.class)));
+        playRecorder.record(defeat(member.id(), Instancio.create(UUID.class)));
+
+        assertThat(characterRepository.existsByMemberIdAndCharacterId(
+                member.id(),
+                "gale-shaman"
+        )).isTrue();
+        assertThat(itemRepository.existsByMemberIdAndItemId(member.id(), "flame-fan"))
+                .isTrue();
+        assertThat(characterRepository.findAll())
+                .filteredOn(character -> member.id().equals(character.getMemberId())
+                        && "gale-shaman".equals(character.getCharacterId()))
+                .hasSize(1);
+        assertThat(itemRepository.findAll())
+                .filteredOn(item -> member.id().equals(item.getMemberId())
+                        && "flame-fan".equals(item.getItemId()))
+                .hasSize(1);
+    }
+
+    @Test
+    void abandonedRunDoesNotUnlockCompletionRewards() {
+        MemberView member = memberRegister.register(new MemberRegistrationInfo(
+                "c".repeat(64),
+                "달바람"
+        ));
+        PlayRecordInfo abandonedGame = new PlayRecordInfo(
+                Instancio.create(UUID.class),
+                member.id(),
+                "dokkaebi-hunter",
+                1_000L,
+                2,
+                1,
+                PlayOutcome.ABANDONED,
+                1_000L,
+                Map.of("seal-talisman", 1),
+                false
+        );
+
+        playRecorder.record(abandonedGame);
+
+        assertThat(progressionFinder.unlockedCharacterIds(member.id()))
+                .containsExactly("dokkaebi-hunter");
+        assertThat(itemRepository.existsByMemberIdAndItemId(member.id(), "flame-fan"))
+                .isFalse();
+    }
+
+    private static PlayRecordInfo defeat(Long memberId, UUID gameSession) {
+        return new PlayRecordInfo(
+                gameSession,
+                memberId,
+                "dokkaebi-hunter",
+                10_000L,
+                25,
+                7,
+                PlayOutcome.DEFEAT,
+                412_000L,
+                Map.of("seal-talisman", 5),
+                true
+        );
     }
 }

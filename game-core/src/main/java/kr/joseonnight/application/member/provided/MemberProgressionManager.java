@@ -6,5 +6,5 @@ public interface MemberProgressionManager {
 
     void initializeNewMember(@Positive Long memberId);
 
-    void unlockFirstVictoryRewards(@Positive Long memberId);
+    void unlockFirstDefeatRewards(@Positive Long memberId);
 }

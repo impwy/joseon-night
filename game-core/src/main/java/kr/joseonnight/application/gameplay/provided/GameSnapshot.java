@@ -17,8 +17,8 @@ import kr.joseonnight.domain.gameplay.UpgradeType;
  */
 public record GameSnapshot(
         GamePhase phase,
+        boolean paused,
         double elapsedSeconds,
-        double remainingSeconds,
         int level,
         int experience,
         int experienceToNextLevel,

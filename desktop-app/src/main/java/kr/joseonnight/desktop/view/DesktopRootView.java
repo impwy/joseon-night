@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -25,6 +26,7 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 import javafx.util.StringConverter;
 import kr.joseonnight.desktop.audio.AudioScene;
 import kr.joseonnight.desktop.audio.GameAudioService;
@@ -35,12 +37,16 @@ import kr.joseonnight.desktop.client.AuthApiClient;
 import kr.joseonnight.desktop.client.DesktopApiClient;
 import kr.joseonnight.desktop.client.MemberApiClient;
 import kr.joseonnight.desktop.gameplay.DesktopApiStatus;
+import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.member.MemberBootstrap;
 import kr.joseonnight.desktop.settings.AudioSettings;
 import kr.joseonnight.desktop.settings.TargetFps;
 
 /** Owns the Login → Lobby → Settings/Combat root-screen transitions. */
 public final class DesktopRootView extends StackPane implements AutoCloseable {
+    private static final Duration DEFEAT_UNLOCK_REFRESH_DELAY = Duration.millis(250.0);
+    private static final int DEFEAT_UNLOCK_REFRESH_ATTEMPTS = 12;
+    private static final String GALE_SHAMAN_ID = "gale-shaman";
     private static final String PANEL_STYLE = "-fx-background-color: rgba(9, 15, 24, 0.94);"
             + "-fx-background-radius: 14; -fx-border-color: #c8a35a; -fx-border-radius: 14;"
             + "-fx-border-width: 2;";
@@ -65,6 +71,8 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private final GameView gameView;
     private final SpriteAtlas sprites = new SpriteAtlas();
     private final ImageView lobbyBackground = createLobbyBackground();
+    private final PauseTransition defeatUnlockRefreshDelay =
+            new PauseTransition(DEFEAT_UNLOCK_REFRESH_DELAY);
 
     private final VBox loginPane = panel();
     private final VBox registrationPane = panel();
@@ -86,6 +94,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private final Label effectsVolumeLabel = bodyLabel();
     private final ComboBox<TargetFps> targetFpsSelector = new ComboBox<>();
     private final Label settingsMessage = bodyLabel();
+    private final Button settingsBackButton = primaryButton("로비로 돌아가기");
 
     private RootScreen screen = RootScreen.LOGIN;
     private MemberBootstrap bootstrap = MemberBootstrap.fallback();
@@ -93,7 +102,9 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     private String loadedSessionToken;
     private String selectedCharacterId;
     private URI openedAuthorizationUri;
+    private long lobbyBootstrapGeneration;
     private boolean applyingSettings;
+    private boolean combatSettingsVisible;
 
     public DesktopRootView(
             AuthApiClient authApiClient,
@@ -106,7 +117,11 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         this.gameApiClient = Objects.requireNonNull(gameApiClient, "gameApiClient");
         this.audioService = Objects.requireNonNull(audioService, "audioService");
         this.browserOpener = Objects.requireNonNull(browserOpener, "browserOpener");
-        gameView = new GameView(gameApiClient, this::restartGame, this::returnToLobby);
+        gameView = new GameView(
+                gameApiClient,
+                this::restartGame,
+                this::returnToLobby,
+                this::toggleCombatSettings);
 
         setPrefSize(1280, 720);
         setStyle("-fx-background-color: linear-gradient(to bottom, #101b27, #080d14);");
@@ -138,7 +153,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     public void clearInput() {
-        gameView.clearInput();
+        gameView.clearInputAfterFocusLoss();
     }
 
     @Override
@@ -146,6 +161,8 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         authApiClient.setStateListener(() -> { });
         gameApiClient.setStateListener(() -> { });
         memberApiClient.setFailureListener(ignored -> { });
+        lobbyBootstrapGeneration++;
+        defeatUnlockRefreshDelay.stop();
         gameView.stopLoop();
         audioService.close();
     }
@@ -246,8 +263,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         Label frameLabel = bodyLabel();
         frameLabel.setText("화면 프레임");
         settingsMessage.setStyle("-fx-font-size: 14px; -fx-text-fill: #afbed0;");
-        Button backButton = primaryButton("로비로 돌아가기");
-        backButton.setOnAction(ignored -> showScreen(RootScreen.LOBBY));
+        settingsBackButton.setOnAction(ignored -> closeSettings());
         settingsPane.getChildren().addAll(
                 title,
                 mutedCheckBox,
@@ -258,7 +274,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
                 frameLabel,
                 targetFpsSelector,
                 settingsMessage,
-                backButton);
+                settingsBackButton);
         applyAudioSettingsToControls();
     }
 
@@ -300,11 +316,17 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         if (session.accessToken().equals(loadedSessionToken)) {
             return;
         }
+        long refreshGeneration = beginLobbyBootstrapRefresh();
         loadedSessionToken = session.accessToken();
+        bootstrap = MemberBootstrap.fallback();
+        selectedCharacterId = null;
+        characterCardNodes.clear();
+        characterCards.getChildren().clear();
+        startGameButton.setDisable(true);
         welcomeLabel.setText("로비 정보를 불러오고 있습니다…");
         memberApiClient.loadBootstrap(session.accessToken()).whenComplete((value, failure) ->
                 runOnJavaFxThread(() -> {
-                    if (!isCurrentSession(session)) {
+                    if (!isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
                         return;
                     }
                     if (failure == null) {
@@ -323,6 +345,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
                         audioSettings = value;
                         settingsMessage.setText("서버에 저장된 설정을 불러왔습니다.");
                     } else {
+                        audioSettings = AudioSettings.defaults();
                         settingsMessage.setText("기본 소리 설정을 사용합니다.");
                     }
                     applyAudioSettingsToControls();
@@ -353,7 +376,13 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
             return;
         }
         audioService.beginNewGame();
-        gameApiClient.startNewGame(session.accessToken(), selected.characterId());
+        double viewportWidth = getWidth() > 0.0 ? getWidth() : gameView.viewportWidth();
+        double viewportHeight = getHeight() > 0.0 ? getHeight() : gameView.viewportHeight();
+        gameApiClient.startNewGame(
+                session.accessToken(),
+                selected.characterId(),
+                viewportWidth,
+                viewportHeight);
         showScreen(RootScreen.COMBAT);
     }
 
@@ -364,14 +393,112 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     private void returnToLobby() {
+        boolean waitForDefeatUnlock = gameApiClient.snapshot().phase() == GamePhase.DEFEAT;
         gameApiClient.disconnect();
+        showScreen(RootScreen.LOBBY);
+        AuthSession session = authApiClient.state().session();
+        if (session != null) {
+            long refreshGeneration = beginLobbyBootstrapRefresh();
+            refreshLobbyBootstrap(session, waitForDefeatUnlock, 0, refreshGeneration);
+        }
+    }
+
+    private void refreshLobbyBootstrap(
+            AuthSession session,
+            boolean waitForDefeatUnlock,
+            int attempt,
+            long refreshGeneration) {
+        welcomeLabel.setText("로비 정보를 다시 불러오고 있습니다…");
+        memberApiClient.loadBootstrap(session.accessToken()).whenComplete((value, failure) ->
+                runOnJavaFxThread(() -> {
+                    if (!isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
+                        return;
+                    }
+                    if (failure == null) {
+                        bootstrap = value;
+                    }
+                    populateLobby();
+                    if (failure != null) {
+                        welcomeLabel.setText(bootstrap.nickname()
+                                + " 님, 현재 로비 정보를 표시합니다.");
+                    }
+                    scheduleDefeatUnlockRefresh(
+                            session, waitForDefeatUnlock, attempt, refreshGeneration);
+                }));
+    }
+
+    private void scheduleDefeatUnlockRefresh(
+            AuthSession session,
+            boolean waitForDefeatUnlock,
+            int attempt,
+            long refreshGeneration) {
+        boolean unlocked = bootstrap.unlockedCharacter(GALE_SHAMAN_ID).isPresent();
+        if (!waitForDefeatUnlock || unlocked || attempt + 1 >= DEFEAT_UNLOCK_REFRESH_ATTEMPTS) {
+            return;
+        }
+        defeatUnlockRefreshDelay.stop();
+        defeatUnlockRefreshDelay.setOnFinished(ignored -> {
+            if (screen == RootScreen.LOBBY
+                    && isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
+                refreshLobbyBootstrap(session, true, attempt + 1, refreshGeneration);
+            }
+        });
+        defeatUnlockRefreshDelay.playFromStart();
+    }
+
+    private long beginLobbyBootstrapRefresh() {
+        defeatUnlockRefreshDelay.stop();
+        return ++lobbyBootstrapGeneration;
+    }
+
+    private boolean isCurrentLobbyBootstrapRefresh(
+            AuthSession session,
+            long refreshGeneration) {
+        return refreshGeneration == lobbyBootstrapGeneration && isCurrentSession(session);
+    }
+
+    private void toggleCombatSettings() {
+        if (screen != RootScreen.COMBAT) {
+            return;
+        }
+        if (combatSettingsVisible) {
+            closeSettings();
+            return;
+        }
+        var snapshot = gameApiClient.snapshot();
+        GamePhase phase = snapshot.phase();
+        if (phase != GamePhase.RUNNING
+                && phase != GamePhase.LEVEL_UP
+                && phase != GamePhase.CHEST_REWARD) {
+            return;
+        }
+        gameView.clearInput();
+        gameApiClient.setGamePaused(true);
+        combatSettingsVisible = true;
+        settingsBackButton.setText("게임으로 돌아가기");
+        applyScreenState();
+    }
+
+    private void closeSettings() {
+        if (combatSettingsVisible) {
+            gameApiClient.setGamePaused(false);
+            combatSettingsVisible = false;
+            applyScreenState();
+            return;
+        }
         showScreen(RootScreen.LOBBY);
     }
 
     private void logout() {
+        lobbyBootstrapGeneration++;
+        defeatUnlockRefreshDelay.stop();
         loadedSessionToken = null;
         bootstrap = MemberBootstrap.fallback();
         selectedCharacterId = null;
+        audioSettings = AudioSettings.defaults();
+        applyAudioSettingsToControls();
+        audioService.applySettings(audioSettings);
+        gameView.setTargetFps(audioSettings.targetFps());
         gameApiClient.clearSession();
         authApiClient.logout();
     }
@@ -442,6 +569,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         runOnJavaFxThread(() -> {
             gameView.refreshFromClient();
             audioService.consume(gameApiClient.snapshot());
+            applyScreenState();
             DesktopApiStatus.State connectionState = gameApiClient.status().state();
             if (connectionState == DesktopApiStatus.State.AUTHENTICATION_EXPIRED) {
                 loadedSessionToken = null;
@@ -454,19 +582,35 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
 
     private void showScreen(RootScreen nextScreen) {
         screen = nextScreen;
+        combatSettingsVisible = false;
+        settingsBackButton.setText("로비로 돌아가기");
+        applyScreenState();
+    }
+
+    private void applyScreenState() {
         loginPane.setVisible(screen == RootScreen.LOGIN);
         loginPane.setManaged(screen == RootScreen.LOGIN);
         registrationPane.setVisible(screen == RootScreen.REGISTRATION);
         registrationPane.setManaged(screen == RootScreen.REGISTRATION);
         lobbyPane.setVisible(screen == RootScreen.LOBBY);
         lobbyPane.setManaged(screen == RootScreen.LOBBY);
-        settingsPane.setVisible(screen == RootScreen.SETTINGS);
-        settingsPane.setManaged(screen == RootScreen.SETTINGS);
-        gameView.setVisible(screen == RootScreen.COMBAT);
-        gameView.setManaged(screen == RootScreen.COMBAT);
-        lobbyBackground.setVisible(screen != RootScreen.COMBAT);
-        gameView.setInputEnabled(screen == RootScreen.COMBAT);
-        audioService.switchScene(screen == RootScreen.COMBAT ? AudioScene.COMBAT : AudioScene.LOBBY);
+        boolean combat = screen == RootScreen.COMBAT;
+        boolean settingsVisible = screen == RootScreen.SETTINGS || combatSettingsVisible;
+        settingsPane.setVisible(settingsVisible);
+        settingsPane.setManaged(settingsVisible);
+        gameView.setVisible(combat);
+        gameView.setManaged(combat);
+        lobbyBackground.setVisible(!combat);
+        var snapshot = gameApiClient.snapshot();
+        GamePhase phase = snapshot.phase();
+        boolean activeGame = phase == GamePhase.RUNNING
+                || phase == GamePhase.LEVEL_UP
+                || phase == GamePhase.CHEST_REWARD;
+        gameView.setInputEnabled(combat
+                && !combatSettingsVisible
+                && activeGame
+                && !snapshot.paused());
+        audioService.switchScene(combat ? AudioScene.COMBAT : AudioScene.LOBBY);
     }
 
     private boolean isCurrentSession(AuthSession session) {
@@ -614,7 +758,7 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
     }
 
     private static Slider volumeSlider() {
-        Slider slider = new Slider(0, 100, 70);
+        Slider slider = new Slider(0, 100, 0);
         slider.setShowTickMarks(true);
         slider.setMajorTickUnit(25);
         slider.setBlockIncrement(5);
@@ -637,4 +781,5 @@ public final class DesktopRootView extends StackPane implements AutoCloseable {
         SETTINGS,
         COMBAT
     }
+
 }

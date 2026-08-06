@@ -8,8 +8,8 @@ import java.util.Objects;
  */
 public record GameState(
         GamePhase phase,
+        boolean paused,
         double elapsedSeconds,
-        double remainingSeconds,
         int level,
         int experience,
         int experienceToNextLevel,
