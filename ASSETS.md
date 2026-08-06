@@ -14,6 +14,7 @@
 | --- | --- | --- | --- |
 | 도깨비 사냥꾼 | `desktop-app/src/main/resources/assets/sprites/player.png` | 마젠타 제거, 30px 안에 비율 유지, 32×32 RGBA. 네 모서리 알파 0과 작은 화면 실루엣 확인 | 완료 |
 | 그림자 도깨비 | `desktop-app/src/main/resources/assets/sprites/enemy.png` | 마젠타 제거, 30px 안에 비율 유지, 32×32 RGBA. 플레이어와 색·실루엣 구분 확인 | 완료 |
+| 도깨비 장수 | `desktop-app/src/main/resources/assets/sprites/dokkaebi-warlord.png` | 초록색 제거, JDK ImageIO 최근접 축소로 30px 안에 비율 유지, 32×32 RGBA. 투명 모서리와 기존 적과 다른 픽셀 확인 | 완료 |
 | 봉인 부적 | `desktop-app/src/main/resources/assets/sprites/talisman.png` | 마젠타 제거, 26px 안에 비율 유지, 32×32 RGBA. 축소 후 직사각형과 금색 테두리 확인 | 완료 |
 | 혼불 | `desktop-app/src/main/resources/assets/sprites/soul-flame.png` | 마젠타 제거, 22px 안에 비율 유지, 32×32 RGBA. 바닥과 투사체에서 청백색 불꽃 식별 확인 | 완료 |
 | 달빛 폐허 바닥 | `desktop-app/src/main/resources/assets/sprites/ground.png` | 전체 원본을 최근접 보간으로 32×32 RGB 변환. 8×8 반복 미리보기에서 고대비 경계 없음 확인 | 완료 |
@@ -70,6 +71,22 @@ Lighting/mood: cool moonlight, eerie but not graphic
 Color palette: charcoal, deep indigo, pale cyan eyes, tiny muted violet accent
 Scene/backdrop: perfectly flat solid #ff00ff chroma-key background for removal
 Constraints: background must be one uniform #ff00ff color with no gradient, shadow, texture, floor, reflection, or lighting variation; do not use #ff00ff in the subject; no text; no watermark; no logo; no frame; no sprite sheet; no resemblance to any existing game enemy
+```
+
+### 도깨비 장수
+
+```text
+Use case: stylized-concept
+Asset type: original 2D game enemy sprite
+Primary request: create exactly one Joseon dark-fantasy dokkaebi warlord for a top-down survival game, an imposing non-human stage-two enemy with a broad armored silhouette
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for local removal
+Subject: exactly one full-body non-human dokkaebi warlord, broad shoulders, two uneven short horns, dark rust-red lamellar armor, charcoal spirit body, small pale cyan ghost-fire eyes, one compact traditional helmet crest; no weapon and no separate object
+Style/medium: authentic crisp 16-bit pixel art, limited palette, hard square pixel clusters, no smoothing, designed to remain distinct and readable when reduced to 32x32 pixels
+Composition/framing: centered single sprite in a three-quarter top-down game view, full body visible, generous empty padding on every side
+Lighting/mood: restrained cool moonlight, formidable but not graphic
+Color palette: dark rust red, charcoal, blackened iron, muted brown, tiny pale cyan eye accents; do not use green in the subject
+Constraints: background must be one perfectly uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated silhouette; no cast shadow; no contact shadow; no glow outside the silhouette; no text; no watermark; no logo; no frame; no sprite sheet; no resemblance to any existing game character or enemy
+Avoid: human face, slender human proportions, bright saturated red, excessive detail that disappears at 32x32, antialiased painting, multiple characters
 ```
 
 ### 봉인 부적
@@ -206,10 +223,10 @@ python3 tools/generate_audio_assets.py --check-only
 
 ## 공통 검수 결과
 
-1. 기존 스프라이트 13개와 배경 장식 3개, 총 16개 스프라이트의 실제 크기 32×32를 확인했다.
+1. 기존 스프라이트 13개, 도깨비 장수와 배경 장식 3개, 총 17개 스프라이트의 실제 크기 32×32를 확인했다.
 2. 모든 전경 자산은 RGBA와 알파 범위 0–255, 네 모서리 알파 0을 확인했다.
 3. 바닥은 8×8로 반복한 미리보기에서 두드러지는 이음선을 찾지 못했다.
-4. 이미지 스무딩을 끈 64픽셀 확대에서 사냥꾼, 도깨비, 부적, 혼불과 장식 3종이 즉시 구분된다.
+4. 이미지 스무딩을 끈 64픽셀 확대에서 사냥꾼, 그림자 도깨비, 적갈색 갑주의 도깨비 장수, 부적, 혼불과 장식 3종이 즉시 구분된다.
 5. 원작 이미지나 참조 이미지를 입력하지 않았고 독자적인 조선 야행 팔레트와 실루엣을 사용했다.
 6. 새 오디오 14개는 22.05kHz, 16비트 스테레오 PCM이며 무음·클리핑·잘린 표본이 없고 BGM 반복 경계를 통과했다.
 7. 오디오를 재생성하기 전과 후의 SHA-256이 같아 제작 결과가 재현됨을 확인했다.
@@ -224,3 +241,4 @@ python3 tools/generate_audio_assets.py --check-only
 | 2026-08-05 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 36초 로비·48초 전투 BGM과 기본·진화 아이템 공격 효과음 12개를 결정적으로 합성하고 자동 검수 추가 |
 | 2026-08-06 | `tools/generate_audio_assets.py`, Python 표준 `wave` | 외부 표본·선율 없이 다중 오음계 프레이즈 BGM, 종이 플릭·검 휘두름·직접 낙뢰 중심의 역할별 합성기로 14개 음원 재설계 |
 | 2026-08-06 | Codex 내장 `image_gen`, `remove_chroma_key.py`, macOS `sips`, JDK `ImageIO` | 마른 풀·잔돌/깨진 기와·얕은 균열 장식 3종을 생성하고 32×32 투명 PNG 검증 추가 |
+| 2026-08-06 | Codex 내장 `image_gen`, `remove_chroma_key.py`, JDK `ImageIO` | 도깨비 장수를 초록 크로마키로 생성하고 투명화한 뒤 최근접 방식으로 32×32 축소·검증 |

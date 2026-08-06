@@ -51,4 +51,13 @@ public record RewardOption(
                         evolution.firstMaterial().displayName(),
                         evolution.secondMaterial().displayName()));
     }
+
+    static RewardOption chestEffect(ChestRewardType effect) {
+        return new RewardOption(
+                "chest-effect:" + effect.id(),
+                RewardKind.CHEST_EFFECT,
+                effect.id(),
+                effect.displayName(),
+                effect.description());
+    }
 }

@@ -597,6 +597,7 @@ public final class GameService implements GameRunner, GameSessionManager {
                 state.killCount(),
                 state.character(),
                 state.barrierAvailable(),
+                state.heartAvailable(),
                 state.invulnerabilityRemainingSeconds(),
                 toSnapshot(state.player()),
                 state.enemies().stream().map(GameService::toSnapshot).toList(),

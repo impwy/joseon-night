@@ -8,6 +8,8 @@ import kr.joseonnight.application.gameplay.provided.GameSessionHandle;
 import kr.joseonnight.desktop.gameplay.GamePhase;
 import kr.joseonnight.desktop.gameplay.SoundEventSnapshot;
 import kr.joseonnight.domain.gameplay.CharacterType;
+import kr.joseonnight.domain.gameplay.RewardKind;
+import kr.joseonnight.domain.gameplay.RewardOption;
 import kr.joseonnight.domain.gameplay.SoundEvent;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -65,6 +67,32 @@ class DesktopCoreContractTest {
     }
 
     @Test
+    void raidEnemyAndChestEffectJsonShapesMatchTheGameCoreSocketContract() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        kr.joseonnight.application.gameplay.provided.EntitySnapshot coreEnemy =
+                new kr.joseonnight.application.gameplay.provided.EntitySnapshot(
+                        17L, 50.0, -30.0, 18.0, 90.0, "dokkaebi-warlord");
+        RewardOption coreHeart = new RewardOption(
+                "chest-effect:heart",
+                RewardKind.CHEST_EFFECT,
+                "heart",
+                "하트",
+                "죽음을 한 번 막습니다.");
+
+        kr.joseonnight.desktop.gameplay.EntitySnapshot desktopEnemy = objectMapper.readValue(
+                objectMapper.writeValueAsString(coreEnemy),
+                kr.joseonnight.desktop.gameplay.EntitySnapshot.class);
+        kr.joseonnight.desktop.gameplay.RewardOptionSnapshot desktopHeart = objectMapper.readValue(
+                objectMapper.writeValueAsString(coreHeart),
+                kr.joseonnight.desktop.gameplay.RewardOptionSnapshot.class);
+
+        assertThat(desktopEnemy.kindId()).isEqualTo("dokkaebi-warlord");
+        assertThat(desktopHeart.optionId()).isEqualTo("chest-effect:heart");
+        assertThat(desktopHeart.kind()).isEqualTo("CHEST_EFFECT");
+        assertThat(desktopHeart.displayName()).isEqualTo("하트");
+    }
+
+    @Test
     void actualGameCoreSnapshotDeserializesIntoTheDesktopReadModel() {
         GameService gameService = GameService.defaultGame();
         GameSessionHandle handle = gameService.startNewGame("contract-member", CharacterType.GALE_SHAMAN);
@@ -75,7 +103,10 @@ class DesktopCoreContractTest {
                 coreJson,
                 kr.joseonnight.desktop.gameplay.GameSnapshot.class);
 
-        assertThat(coreJson).contains("\"paused\":false").doesNotContain("remainingSeconds");
+        assertThat(coreJson)
+                .contains("\"paused\":false")
+                .contains("\"heartAvailable\":false")
+                .doesNotContain("remainingSeconds");
         assertThat(desktopSnapshot.phase()).isEqualTo(GamePhase.RUNNING);
         assertThat(desktopSnapshot.paused()).isFalse();
         assertThat(desktopSnapshot.characterId()).isEqualTo("GALE_SHAMAN");
@@ -85,6 +116,7 @@ class DesktopCoreContractTest {
         assertThat(desktopSnapshot.occupiedItemSlots()).isEqualTo(1);
         assertThat(desktopSnapshot.evolutions()).isEmpty();
         assertThat(desktopSnapshot.barrierAvailable()).isFalse();
+        assertThat(desktopSnapshot.heartAvailable()).isFalse();
         assertThat(desktopSnapshot.invulnerabilityRemainingSeconds()).isZero();
         assertThat(desktopSnapshot.chests()).hasSize(5);
         assertThat(desktopSnapshot.chestIndicators()).hasSize(5);

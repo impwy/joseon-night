@@ -23,6 +23,8 @@ public record GameRules(
         int maxSoulFlames
 ) {
 
+    private static final double INCREASED_ENEMY_DENSITY = 1.3;
+
     public GameRules {
         requirePositive(playerSpeed, "playerSpeed");
         requirePositive(playerRadius, "playerRadius");
@@ -46,7 +48,7 @@ public record GameRules(
                 240.0,
                 18.0,
                 760.0,
-                0.5,
+                0.5 / INCREASED_ENEMY_DENSITY,
                 55.0,
                 20.0,
                 17.0,
@@ -55,7 +57,7 @@ public record GameRules(
                 0.65,
                 100.0,
                 5,
-                220,
+                286,
                 160,
                 300
         );

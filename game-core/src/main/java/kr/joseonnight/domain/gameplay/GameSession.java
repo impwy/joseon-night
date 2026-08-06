@@ -38,6 +38,11 @@ public final class GameSession {
     private static final int MAX_RECENT_SOUND_EVENTS = 64;
     private static final int MAX_ACTIVE_LIGHTNING_STRIKES = 32;
     private static final double LIGHTNING_VISUAL_SECONDS = 0.24;
+    private static final double MIN_ENEMY_SPAWN_INTERVAL_SECONDS = 0.15 / 1.3;
+    private static final int WARLORD_SPAWN_KILL_THRESHOLD = 400;
+    private static final double WARLORD_HEALTH_MULTIPLIER = 1.5;
+    private static final String SHADOW_DOKKAEBI_KIND_ID = "shadow-dokkaebi";
+    private static final String DOKKAEBI_WARLORD_KIND_ID = "dokkaebi-warlord";
 
     private final GameRules rules;
     private final Random random;
@@ -70,6 +75,8 @@ public final class GameSession {
     private int experience;
     private int experienceToNextLevel;
     private int killCount;
+    private int stageOneKillCount;
+    private boolean heartAvailable;
     private long nextEntityId = 1L;
     private long nextSoundEventId = 1L;
 
@@ -190,8 +197,8 @@ public final class GameSession {
         switch (option.kind()) {
             case UPGRADE -> applyGeneralUpgrade(UpgradeType.valueOf(option.targetId()));
             case ITEM -> loadout.apply(option);
-            case EVOLUTION -> throw new IllegalArgumentException(
-                    "An evolution can only be selected from a purple chest");
+            case EVOLUTION, CHEST_EFFECT -> throw new IllegalArgumentException(
+                    "The reward cannot be selected during level up: " + option.kind());
         }
         completeLevelUp();
     }
@@ -199,9 +206,14 @@ public final class GameSession {
     public void chooseChestReward(String optionId) {
         ensurePhase(GamePhase.CHEST_REWARD, "A chest reward can only be chosen while a chest is open");
         RewardOption option = findOption(chestRewardOptions, optionId);
-        loadout.apply(option);
+        if (option.kind() == RewardKind.CHEST_EFFECT) {
+            applyChestEffect(ChestRewardType.fromId(option.targetId()));
+        } else {
+            loadout.apply(option);
+        }
         chestRewardOptions = List.of();
         phase = GamePhase.RUNNING;
+        beginLevelUpIfReady();
     }
 
     public void abandon() {
@@ -222,6 +234,7 @@ public final class GameSession {
                 killCount,
                 character,
                 player.barrierAvailable,
+                heartAvailable,
                 player.invulnerabilityRemainingSeconds,
                 player.snapshot(character.id()),
                 enemies.stream().map(Enemy::snapshot).toList(),
@@ -332,8 +345,14 @@ public final class GameSession {
                 chests.remove(index);
                 emitSound(SoundCue.CHEST_OPENED);
                 chestRewardOptions = chest.type == ChestType.PURPLE
-                        ? loadout.purpleChestOptions(random)
-                        : loadout.yellowChestOptions(random);
+                        ? loadout.purpleChestOptions(
+                                random,
+                                heartAvailable,
+                                !soulFlames.isEmpty())
+                        : loadout.yellowChestOptions(
+                                random,
+                                heartAvailable,
+                                !soulFlames.isEmpty());
                 input = InputState.idle();
                 if (chestRewardOptions.isEmpty()) {
                     phase = GamePhase.RUNNING;
@@ -363,13 +382,15 @@ public final class GameSession {
         while (spawnAccumulatorSeconds >= interval && enemies.size() < rules.maxEnemies()) {
             spawnAccumulatorSeconds -= interval;
             double angle = random.nextDouble() * Math.PI * 2.0;
+            boolean spawnWarlord = stageOneKillCount >= WARLORD_SPAWN_KILL_THRESHOLD;
             enemies.add(new Enemy(
                     nextId(),
                     player.x + Math.cos(angle) * rules.enemySpawnRadius(),
                     player.y + Math.sin(angle) * rules.enemySpawnRadius(),
                     rules.enemyRadius(),
                     currentEnemySpeed(),
-                    currentEnemyHealth()));
+                    currentEnemyHealth() * (spawnWarlord ? WARLORD_HEALTH_MULTIPLIER : 1.0),
+                    spawnWarlord ? DOKKAEBI_WARLORD_KIND_ID : SHADOW_DOKKAEBI_KIND_ID));
         }
         if (enemies.size() >= rules.maxEnemies()) {
             spawnAccumulatorSeconds = Math.min(spawnAccumulatorSeconds, interval);
@@ -378,7 +399,9 @@ public final class GameSession {
 
     private double currentSpawnIntervalSeconds() {
         int difficulty = difficultyLevel();
-        double configuredMinimum = Math.min(0.15, rules.enemySpawnIntervalSeconds());
+        double configuredMinimum = Math.min(
+                MIN_ENEMY_SPAWN_INTERVAL_SECONDS,
+                rules.enemySpawnIntervalSeconds());
         return Math.max(configuredMinimum,
                 rules.enemySpawnIntervalSeconds() * Math.pow(0.82, difficulty));
     }
@@ -419,6 +442,12 @@ public final class GameSession {
         }
         if (player.barrierAvailable) {
             player.barrierAvailable = false;
+            player.invulnerabilityRemainingSeconds = BARRIER_INVULNERABILITY_SECONDS;
+            emitSound(SoundCue.GUARD);
+            return false;
+        }
+        if (heartAvailable) {
+            heartAvailable = false;
             player.invulnerabilityRemainingSeconds = BARRIER_INVULNERABILITY_SECONDS;
             emitSound(SoundCue.GUARD);
             return false;
@@ -701,16 +730,26 @@ public final class GameSession {
         return Math.max(0.0, Math.min(1.0, projected));
     }
 
-    private void dropSoulFlame(double x, double y) {
+    /** Package-scoped root operation used by deterministic domain scenarios. */
+    void dropSoulFlame(double x, double y) {
+        Assert.isTrue(Double.isFinite(x) && Double.isFinite(y),
+                "soul flame position must be finite");
         if (soulFlames.size() < rules.maxSoulFlames()) {
-            soulFlames.add(new SoulFlame(nextId(), x, y));
+            soulFlames.add(new SoulFlame(nextId(), x, y, 1));
+            return;
         }
+        SoulFlame oldest = soulFlames.removeFirst();
+        oldest.relocate(x, y, 1);
+        soulFlames.add(oldest);
     }
 
     private void damageEnemy(Enemy enemy, double damage) {
         enemy.health -= damage;
         if (enemy.health <= 0.0 && enemies.remove(enemy)) {
             killCount++;
+            if (enemy.kindId.equals(SHADOW_DOKKAEBI_KIND_ID)) {
+                stageOneKillCount++;
+            }
             dropSoulFlame(enemy.x, enemy.y);
         }
     }
@@ -738,7 +777,8 @@ public final class GameSession {
                 y,
                 rules.enemyRadius(),
                 currentEnemySpeed(),
-                health));
+                health,
+                SHADOW_DOKKAEBI_KIND_ID));
     }
 
     /** Package-scoped root operation used by deterministic domain scenarios. */
@@ -768,7 +808,27 @@ public final class GameSession {
 
             if (distance <= collectDistance) {
                 soulFlames.remove(index);
-                experience++;
+                experience += soulFlame.value;
+            }
+        }
+    }
+
+    private void collectAllSoulFlames() {
+        for (SoulFlame soulFlame : soulFlames) {
+            experience += soulFlame.value;
+        }
+        soulFlames.clear();
+    }
+
+    private void applyChestEffect(ChestRewardType effect) {
+        switch (effect) {
+            case HEART -> {
+                Assert.state(!heartAvailable, "A heart is already available");
+                heartAvailable = true;
+            }
+            case MAGNET -> {
+                Assert.state(!soulFlames.isEmpty(), "There are no soul flames to collect");
+                collectAllSoulFlames();
             }
         }
     }
@@ -792,7 +852,7 @@ public final class GameSession {
         level++;
         experienceToNextLevel = Math.max(
                 experienceToNextLevel + 1,
-                (int) Math.ceil(experienceToNextLevel * 1.45));
+                (int) Math.ceil(experienceToNextLevel * 1.35));
         levelUpOptions = List.of();
         upgradeChoices = List.of();
         phase = GamePhase.RUNNING;
@@ -883,20 +943,30 @@ public final class GameSession {
         private double y;
         private final double radius;
         private final double speed;
+        private final String kindId;
         private double health;
         private double rotationDegrees;
 
-        private Enemy(long id, double x, double y, double radius, double speed, double health) {
+        private Enemy(
+                long id,
+                double x,
+                double y,
+                double radius,
+                double speed,
+                double health,
+                String kindId
+        ) {
             this.id = id;
             this.x = x;
             this.y = y;
             this.radius = radius;
             this.speed = speed;
             this.health = health;
+            this.kindId = kindId;
         }
 
         private EntityState snapshot() {
-            return new EntityState(id, x, y, radius, rotationDegrees, "shadow-dokkaebi");
+            return new EntityState(id, x, y, radius, rotationDegrees, kindId);
         }
     }
 
@@ -943,11 +1013,19 @@ public final class GameSession {
         private final long id;
         private double x;
         private double y;
+        private int value;
 
-        private SoulFlame(long id, double x, double y) {
+        private SoulFlame(long id, double x, double y, int value) {
             this.id = id;
             this.x = x;
             this.y = y;
+            this.value = value;
+        }
+
+        private void relocate(double x, double y, int addedValue) {
+            this.x = x;
+            this.y = y;
+            value += addedValue;
         }
 
         private EntityState snapshot() {

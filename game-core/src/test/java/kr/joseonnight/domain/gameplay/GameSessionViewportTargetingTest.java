@@ -112,6 +112,37 @@ class GameSessionViewportTargetingTest {
     }
 
     @Test
+    void twoDisjointEvolutionsAttackIndependentlyInTheSameTick() {
+        GameSession session = GameSession.running(
+                targetingRules(),
+                450L,
+                CharacterType.DOKKAEBI_HUNTER,
+                new GameViewport(640, 360));
+        evolve(session, EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES);
+        evolve(session, EvolutionType.HEAVENLY_THUNDER_SEAL);
+        for (int enemy = 0; enemy < 6; enemy++) {
+            session.spawnEnemy(100.0 + enemy * 20.0, 0.0, 1_000.0);
+        }
+
+        session.tick(0.01);
+
+        assertThat(session.state().evolutions()).containsExactly(
+                EvolutionType.HEAVENLY_THUNDER_SEAL,
+                EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES);
+        assertThat(session.state().lightningStrikes())
+                .anyMatch(strike -> EvolutionType.HEAVENLY_THUNDER_SEAL.id()
+                        .equals(strike.kindId()));
+        assertThat(session.state().projectiles())
+                .anyMatch(projectile -> EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES.id()
+                        .equals(projectile.kindId()));
+        assertThat(session.state().soundEvents())
+                .extracting(SoundEvent::type)
+                .contains(
+                        SoundCue.forEvolution(EvolutionType.HEAVENLY_THUNDER_SEAL),
+                        SoundCue.forEvolution(EvolutionType.LUNAR_ECLIPSE_TWIN_BLADES));
+    }
+
+    @Test
     void anEnemyCirclePartlyOverlappingTheViewportIsVisible() {
         GameSession session = GameSession.running(
                 targetingRules(),

@@ -2,6 +2,7 @@ package kr.joseonnight.desktop.view;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 import javafx.scene.image.Image;
 
 final class SpriteAtlas {
@@ -10,6 +11,7 @@ final class SpriteAtlas {
     private final Image player = load("player.png");
     private final Image galeMaiden = load("gale-maiden.png");
     private final Image enemy = load("enemy.png");
+    private final Image dokkaebiWarlord = load("dokkaebi-warlord.png");
     private final Image talisman = load("talisman.png");
     private final Image flameFan = load("flame-fan.png");
     private final Image wardingSword = load("warding-sword.png");
@@ -35,15 +37,25 @@ final class SpriteAtlas {
         return player;
     }
 
-    Image enemy() {
+    Image enemy(String kindId) {
+        if ("dokkaebi-warlord.png".equals(enemyAssetName(kindId)) && dokkaebiWarlord != null) {
+            return dokkaebiWarlord;
+        }
         return enemy;
+    }
+
+    static String enemyAssetName(String kindId) {
+        if (kindId != null && "dokkaebi-warlord".equals(kindId.toLowerCase(Locale.ROOT))) {
+            return "dokkaebi-warlord.png";
+        }
+        return "enemy.png";
     }
 
     Image projectile(String kindId) {
         if (kindId == null) {
             return talisman;
         }
-        return switch (kindId.toLowerCase(java.util.Locale.ROOT)) {
+        return switch (kindId.toLowerCase(Locale.ROOT)) {
             case "flame-fan" -> flameFan;
             case "exorcist-sword" -> wardingSword;
             case "returning-boomerang" -> returningBoomerang;
@@ -70,7 +82,7 @@ final class SpriteAtlas {
     }
 
     Image chest(String type) {
-        if (type != null && type.toUpperCase(java.util.Locale.ROOT).contains("PURPLE")) {
+        if (type != null && type.toUpperCase(Locale.ROOT).contains("PURPLE")) {
             return purpleChest;
         }
         return yellowChest;

@@ -2,6 +2,7 @@ package kr.joseonnight.desktop.view;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import javafx.scene.paint.Color;
 import kr.joseonnight.desktop.gameplay.ChestSnapshot;
 import org.junit.jupiter.api.Test;
 
@@ -25,5 +26,12 @@ class GameViewPresentationTest {
                 outside, 960.0, 540.0, 0.0, 0.0)).isTrue();
         assertThat(GameView.isChestOutsideViewport(
                 opened, 960.0, 540.0, 0.0, 0.0)).isFalse();
+    }
+
+    @Test
+    void heartReadinessAndBackgroundToneUseThePlannedPresentation() {
+        assertThat(GameView.heartStatusText(true)).isEqualTo("하트  준비됨");
+        assertThat(GameView.heartStatusText(false)).isEqualTo("하트  없음");
+        assertThat(GameView.backgroundTone()).isEqualTo(Color.web("#080b10", 0.30));
     }
 }

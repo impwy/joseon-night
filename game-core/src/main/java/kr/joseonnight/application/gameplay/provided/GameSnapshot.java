@@ -25,6 +25,7 @@ public record GameSnapshot(
         int killCount,
         CharacterType character,
         boolean barrierAvailable,
+        boolean heartAvailable,
         double invulnerabilityRemainingSeconds,
         EntitySnapshot player,
         List<EntitySnapshot> enemies,

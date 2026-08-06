@@ -44,6 +44,7 @@ public final class GameView extends StackPane {
     private static final double PROJECTILE_SIZE = 32.0;
     private static final double SOUL_FLAME_SIZE = 32.0;
     private static final double CHEST_SIZE = 64.0;
+    private static final Color BACKGROUND_TONE = Color.web("#080b10", 0.30);
     private static final String PANEL_STYLE = "-fx-background-color: rgba(9, 15, 24, 0.92);"
             + "-fx-background-radius: 14; -fx-border-color: #c8a35a; -fx-border-radius: 14;"
             + "-fx-border-width: 2;";
@@ -68,6 +69,7 @@ public final class GameView extends StackPane {
     private final Label experienceLabel = hudLabel();
     private final Label killLabel = hudLabel();
     private final Label barrierLabel = hudLabel();
+    private final Label heartLabel = hudLabel();
     private final Label loadoutLabel = hudLabel();
     private final Button settingsButton = actionButton("설정");
     private final Label connectionLabel = new Label();
@@ -229,6 +231,7 @@ public final class GameView extends StackPane {
                 experienceLabel,
                 killLabel,
                 barrierLabel,
+                heartLabel,
                 loadoutLabel);
         loadoutLabel.setMaxWidth(520.0);
         loadoutLabel.setWrapText(true);
@@ -374,6 +377,7 @@ public final class GameView extends StackPane {
                 snapshot.experience(), snapshot.experienceToNextLevel()));
         killLabel.setText("퇴치  %d".formatted(snapshot.killCount()));
         barrierLabel.setText(barrierText(snapshot));
+        heartLabel.setText(heartStatusText(snapshot.heartAvailable()));
         loadoutLabel.setText(loadoutText(snapshot));
 
         if (choosingUpgrade) {
@@ -468,6 +472,8 @@ public final class GameView extends StackPane {
         double cameraY = player == null ? 0.0 : player.y();
         drawGround(graphics, width, height, cameraX, cameraY);
         drawDecorations(graphics, width, height, cameraX, cameraY);
+        graphics.setFill(BACKGROUND_TONE);
+        graphics.fillRect(0.0, 0.0, width, height);
 
         for (ChestSnapshot chest : snapshot.chests()) {
             drawChest(graphics, chest, width, height, cameraX, cameraY);
@@ -604,7 +610,7 @@ public final class GameView extends StackPane {
             double cameraY) {
         double screenX = screenX(entity, width, cameraX);
         double screenY = screenY(entity, height, cameraY);
-        Image sprite = sprites.enemy();
+        Image sprite = sprites.enemy(entity.kindId());
         if (sprite != null) {
             drawCentered(graphics, sprite, screenX, screenY, ACTOR_SIZE, entity.rotationDegrees());
             return;
@@ -783,6 +789,14 @@ public final class GameView extends StackPane {
     static String survivalTimeText(double elapsedSeconds) {
         int seconds = Math.max(0, (int) Math.floor(elapsedSeconds));
         return "생존 시간  %02d:%02d".formatted(seconds / 60, seconds % 60);
+    }
+
+    static String heartStatusText(boolean heartAvailable) {
+        return heartAvailable ? "하트  준비됨" : "하트  없음";
+    }
+
+    static Color backgroundTone() {
+        return BACKGROUND_TONE;
     }
 
     private static void drawCentered(

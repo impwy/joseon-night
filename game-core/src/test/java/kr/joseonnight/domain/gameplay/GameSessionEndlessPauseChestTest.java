@@ -140,8 +140,10 @@ class GameSessionEndlessPauseChestTest {
     }
 
     @Test
-    void standardEnemyIntervalIsHalfASecondAndStillAcceleratesEachMinute() {
-        assertThat(GameRules.standard().enemySpawnIntervalSeconds()).isEqualTo(0.5);
+    void standardEnemyIntervalAndCapAreThirtyPercentHigherAndStillAccelerateEachMinute() {
+        assertThat(GameRules.standard().enemySpawnIntervalSeconds())
+                .isEqualTo(0.5 / 1.3);
+        assertThat(GameRules.standard().maxEnemies()).isEqualTo(286);
         GameSession session = GameSession.running(spawnRules(), 6L);
         for (int tick = 0; tick < 3_600; tick++) {
             session.tick(1.0 / 60.0);
@@ -151,12 +153,12 @@ class GameSessionEndlessPauseChestTest {
             session.tick(1.0 / 60.0);
         }
 
-        assertThat(afterFirstMinute).isBetween(119, 121);
-        assertThat(session.state().enemies().size() - afterFirstMinute).isBetween(24, 25);
+        assertThat(afterFirstMinute).isBetween(155, 157);
+        assertThat(session.state().enemies().size() - afterFirstMinute).isBetween(31, 32);
     }
 
     @Test
-    void acceleratedEnemyIntervalNeverDropsBelowPointFifteenSeconds() {
+    void acceleratedEnemyIntervalNeverDropsBelowThirtyPercentFasterMinimum() {
         GameSession session = GameSession.running(spawnRules(4_000), 7L);
         session.tick(420.0);
         int beforeMeasurement = session.state().enemies().size();
@@ -164,16 +166,16 @@ class GameSessionEndlessPauseChestTest {
         session.tick(15.0);
 
         assertThat(session.state().enemies().size() - beforeMeasurement)
-                .isBetween(100, 101);
+                .isBetween(130, 131);
     }
 
     @Test
-    void enemySpawningNeverExceedsTheTwoHundredTwentyEnemyCap() {
+    void enemySpawningNeverExceedsTheTwoHundredEightySixEnemyCap() {
         GameSession session = GameSession.running(spawnRules(), 8L);
 
         session.tick(420.0);
 
-        assertThat(session.state().enemies()).hasSize(220);
+        assertThat(session.state().enemies()).hasSize(286);
     }
 
     private static GameRules quietRules() {
@@ -215,7 +217,7 @@ class GameSessionEndlessPauseChestTest {
     }
 
     private static GameRules spawnRules() {
-        return spawnRules(220);
+        return spawnRules(286);
     }
 
     private static GameRules spawnRules(int maxEnemies) {
@@ -223,7 +225,7 @@ class GameSessionEndlessPauseChestTest {
                 240.0,
                 18.0,
                 2_000.0,
-                0.5,
+                0.5 / 1.3,
                 0.0,
                 10_000.0,
                 17.0,

@@ -30,6 +30,7 @@ public record GameSnapshot(
         List<UpgradeType> upgradeChoices,
         @JsonAlias("character") String characterId,
         boolean barrierAvailable,
+        Boolean heartAvailable,
         double invulnerabilityRemainingSeconds,
         @JsonAlias("items") List<ItemSlotSnapshot> itemSlots,
         List<String> evolutions,
@@ -55,6 +56,7 @@ public record GameSnapshot(
         pendingLevelUpOptions = immutableOrEmpty(pendingLevelUpOptions);
         pendingChestOptions = immutableOrEmpty(pendingChestOptions);
         soundEvents = immutableOrEmpty(soundEvents);
+        heartAvailable = Boolean.TRUE.equals(heartAvailable);
     }
 
     /** Compatibility constructor for the original vertical-slice snapshot. */
@@ -85,6 +87,7 @@ public record GameSnapshot(
                 soulFlames,
                 upgradeChoices,
                 null,
+                false,
                 false,
                 0.0,
                 List.of(),

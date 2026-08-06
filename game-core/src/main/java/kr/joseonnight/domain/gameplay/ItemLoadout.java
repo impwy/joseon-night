@@ -24,13 +24,22 @@ final class ItemLoadout {
 
     private final Map<ItemType, Integer> items = new EnumMap<>(ItemType.class);
     private final Set<EvolutionType> evolutions = EnumSet.noneOf(EvolutionType.class);
+    private final Set<ItemType> consumedEvolutionMaterials = EnumSet.noneOf(ItemType.class);
 
     ItemLoadout(CharacterType character) {
         items.put(Objects.requireNonNull(character, "character").startingItem(), 1);
     }
 
     List<RewardOption> yellowChestOptions(Random random) {
-        return shuffledLimit(yellowCandidates(), random);
+        return yellowChestOptions(random, false, false);
+    }
+
+    List<RewardOption> yellowChestOptions(
+            Random random,
+            boolean heartAvailable,
+            boolean soulFlamesPresent
+    ) {
+        return shuffledLimit(chestFallbackCandidates(heartAvailable, soulFlamesPresent), random);
     }
 
     /**
@@ -39,7 +48,7 @@ final class ItemLoadout {
      */
     List<RewardOption> levelUpOptions(Random random) {
         Objects.requireNonNull(random, "random");
-        List<RewardOption> itemCandidates = yellowCandidates();
+        List<RewardOption> itemCandidates = itemCandidates();
         shuffle(itemCandidates, random);
 
         List<RewardOption> upgradeCandidates = new ArrayList<>();
@@ -67,6 +76,14 @@ final class ItemLoadout {
     }
 
     List<RewardOption> purpleChestOptions(Random random) {
+        return purpleChestOptions(random, false, false);
+    }
+
+    List<RewardOption> purpleChestOptions(
+            Random random,
+            boolean heartAvailable,
+            boolean soulFlamesPresent
+    ) {
         List<RewardOption> candidates = new ArrayList<>();
         for (EvolutionType evolution : EvolutionType.values()) {
             if (canEvolve(evolution)) {
@@ -74,7 +91,9 @@ final class ItemLoadout {
             }
         }
         if (candidates.size() < MAX_OPTIONS) {
-            List<RewardOption> fallback = yellowCandidates();
+            List<RewardOption> fallback = chestFallbackCandidates(
+                    heartAvailable,
+                    soulFlamesPresent);
             shuffle(fallback, random);
             for (RewardOption option : fallback) {
                 if (candidates.size() == MAX_OPTIONS) {
@@ -95,8 +114,8 @@ final class ItemLoadout {
         switch (option.kind()) {
             case ITEM -> applyItem(ItemType.fromId(option.targetId()));
             case EVOLUTION -> applyEvolution(EvolutionType.fromId(option.targetId()));
-            case UPGRADE -> throw new IllegalArgumentException(
-                    "A general upgrade is not an item-loadout reward");
+            case UPGRADE, CHEST_EFFECT -> throw new IllegalArgumentException(
+                    "The reward does not belong to the item loadout: " + option.kind());
         }
     }
 
@@ -137,16 +156,23 @@ final class ItemLoadout {
         return Collections.unmodifiableSet(orderedEvolutions);
     }
 
-    private List<RewardOption> yellowCandidates() {
+    boolean wasEvolutionMaterialConsumed(ItemType item) {
+        return consumedEvolutionMaterials.contains(Objects.requireNonNull(item, "item"));
+    }
+
+    private List<RewardOption> itemCandidates() {
         List<RewardOption> candidates = new ArrayList<>();
         for (Map.Entry<ItemType, Integer> entry : items.entrySet()) {
-            if (entry.getValue() < MAX_ITEM_LEVEL) {
+            if (entry.getValue() < MAX_ITEM_LEVEL
+                    && !consumedEvolutionMaterials.contains(entry.getKey())) {
                 candidates.add(RewardOption.item(entry.getKey(), true, entry.getValue()));
             }
         }
         if (occupiedSlots() < MAX_SLOTS) {
             for (ItemType item : ItemType.values()) {
-                if (!CHARACTER_STARTING_ITEMS.contains(item) && !items.containsKey(item)) {
+                if (!CHARACTER_STARTING_ITEMS.contains(item)
+                        && !items.containsKey(item)
+                        && !consumedEvolutionMaterials.contains(item)) {
                     candidates.add(RewardOption.item(item, false, 0));
                 }
             }
@@ -154,13 +180,31 @@ final class ItemLoadout {
         return candidates;
     }
 
+    private List<RewardOption> chestFallbackCandidates(
+            boolean heartAvailable,
+            boolean soulFlamesPresent
+    ) {
+        List<RewardOption> candidates = itemCandidates();
+        if (!heartAvailable) {
+            candidates.add(RewardOption.chestEffect(ChestRewardType.HEART));
+        }
+        if (soulFlamesPresent) {
+            candidates.add(RewardOption.chestEffect(ChestRewardType.MAGNET));
+        }
+        return candidates;
+    }
+
     private boolean canEvolve(EvolutionType evolution) {
         return itemLevel(evolution.firstMaterial()) == MAX_ITEM_LEVEL
                 && itemLevel(evolution.secondMaterial()) == MAX_ITEM_LEVEL
+                && !consumedEvolutionMaterials.contains(evolution.firstMaterial())
+                && !consumedEvolutionMaterials.contains(evolution.secondMaterial())
                 && !evolutions.contains(evolution);
     }
 
     private void applyItem(ItemType item) {
+        Assert.state(!consumedEvolutionMaterials.contains(item),
+                () -> "An evolution material cannot be reacquired: " + item.id());
         Integer currentLevel = items.get(item);
         if (currentLevel == null) {
             Assert.isTrue(
@@ -180,6 +224,8 @@ final class ItemLoadout {
                 () -> "Evolution requirements are not met: " + evolution.id());
         items.remove(evolution.firstMaterial());
         items.remove(evolution.secondMaterial());
+        consumedEvolutionMaterials.add(evolution.firstMaterial());
+        consumedEvolutionMaterials.add(evolution.secondMaterial());
         evolutions.add(evolution);
     }
 

@@ -16,6 +16,7 @@ public record GameState(
         int killCount,
         CharacterType character,
         boolean barrierAvailable,
+        boolean heartAvailable,
         double invulnerabilityRemainingSeconds,
         EntityState player,
         List<EntityState> enemies,
