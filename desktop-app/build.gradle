@@ -4,19 +4,6 @@ plugins {
     id 'org.openjfx.javafxplugin'
 }
 
-sourceSets {
-    contractTest {
-        java.srcDir 'src/contractTest/java'
-        compileClasspath += sourceSets.main.output
-        runtimeClasspath += output + compileClasspath + sourceSets.main.output
-    }
-}
-
-configurations {
-    contractTestImplementation.extendsFrom testImplementation
-    contractTestRuntimeOnly.extendsFrom testRuntimeOnly
-}
-
 dependencies {
     implementation enforcedPlatform("org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}")
     implementation platform("com.linecorp.armeria:armeria-bom:${rootProject.ext.armeriaVersion}")
@@ -25,14 +12,9 @@ dependencies {
     implementation 'com.linecorp.armeria:armeria'
     compileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
     testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
-    contractTestCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
-
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation "com.tngtech.archunit:archunit-junit5:${rootProject.ext.archUnitVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-    contractTestImplementation project(':game-core')
-    contractTestRuntimeOnly 'com.h2database:h2'
 }
 
 javafx {
@@ -54,16 +36,4 @@ tasks.named('run') {
 
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
-}
-
-tasks.register('contractTest', Test) {
-    description = 'Checks the actual game-core JSON snapshot against the desktop read model.'
-    group = 'verification'
-    testClassesDirs = sourceSets.contractTest.output.classesDirs
-    classpath = sourceSets.contractTest.runtimeClasspath
-    shouldRunAfter tasks.named('test')
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('contractTest')
 }

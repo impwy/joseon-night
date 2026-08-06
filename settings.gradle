@@ -16,3 +16,4 @@ rootProject.name = 'joseon-night'
 
 include 'game-core'
 include 'desktop-app'
+include 'contract-tests'
