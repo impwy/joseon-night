@@ -1,0 +1,10 @@
+dependencies {
+    testImplementation enforcedPlatform(
+            "org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}")
+    testImplementation project(':game-core')
+    testImplementation project(':desktop-app')
+    testImplementation 'org.springframework.boot:spring-boot-starter-json'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testCompileOnly 'com.github.spotbugs:spotbugs-annotations:4.10.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}

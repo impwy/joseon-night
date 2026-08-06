@@ -36,8 +36,9 @@ Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 쓰�
 
 ```text
 joseon-night
-├── game-core       도메인·애플리케이션·어댑터와 Spring Boot·Armeria 백엔드
-└── desktop-app     JavaFX 화면과 DesktopApiClient 프런트엔드
+├── game-core        도메인·애플리케이션·어댑터와 Spring Boot·Armeria 백엔드
+├── desktop-app      JavaFX 화면과 DesktopApiClient 프런트엔드
+└── contract-tests   두 운영 모듈의 JSON 호환성을 검증하는 테스트 전용 모듈
 ```
 
 `game-core`는 Splearn과 같은 실용적 헥사고날 패키지 구조를 사용합니다. JPA 포트는 `application.<도메인>.required`에서 `JpaRepository`를 직접 상속하고 Spring Data가 구현합니다. 웹 API는 `adapter.webapi/memberapi`, `rankingapi`, 인증은 `adapter.security`, Kafka는 `adapter.integration.messaging`에 둡니다. 영속 엔티티는 PostgreSQL에 저장하고 60Hz `GameSession`은 메모리에 유지합니다.
@@ -98,7 +99,7 @@ curl http://127.0.0.1:8081/internal/healthcheck
 ./gradlew clean check
 ```
 
-이 명령은 단위·통합·아키텍처 테스트, 실제 Core–Desktop Armeria 계약 테스트와 SpotBugs 정적 분석을 실행합니다. GitHub Actions도 push와 Pull Request에서 Temurin 25로 같은 명령을 실행합니다. JavaFX GUI는 CI에서 실행하지 않으며 macOS 로컬 환경에서 수동으로 확인합니다.
+이 명령은 단위·통합·아키텍처 테스트, `contract-tests` 모듈의 실제 Core–Desktop JSON 계약 테스트와 SpotBugs 정적 분석을 실행합니다. GitHub Actions도 push와 Pull Request에서 Temurin 25로 같은 명령을 실행합니다. JavaFX GUI는 CI에서 실행하지 않으며 macOS 로컬 환경에서 수동으로 확인합니다.
 
 터미널 Gradle 실행은 셸의 `JAVA_HOME`으로 JDK를 고릅니다. 테스트 전용 H2 데이터베이스, 임의 서버 포트, Docker Compose 비활성화와 임시 JWT 키는 테스트 코드가 직접 설정하므로 `.env`에 넣지 않습니다.
 

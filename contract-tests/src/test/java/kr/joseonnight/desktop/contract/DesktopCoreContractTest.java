@@ -14,7 +14,7 @@ import kr.joseonnight.domain.gameplay.SoundEvent;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-/** Verifies that the framework-free desktop snapshot accepts the actual game-core JSON shape. */
+/** Verifies from the test-only module that the desktop model accepts the actual game-core JSON shape. */
 class DesktopCoreContractTest {
 
     @Test
