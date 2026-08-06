@@ -45,6 +45,12 @@ class ArchitectureTest {
             .should().dependOnClassesThat().resideInAnyPackage("javafx..", "org.springframework..");
 
     @ArchTest
+    static final ArchRule AUDIO_AVOIDS_JAVAFX_MEDIA_AND_ITS_NATIVE_BACKEND = noClasses()
+            .that().resideInAPackage("kr.joseonnight.desktop.audio..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "javafx.scene.media..", "com.sun.media..");
+
+    @ArchTest
     static final ArchRule VIEW_MODELS_STAY_FRAMEWORK_FREE = noClasses()
             .that().resideInAPackage("kr.joseonnight.desktop.gameplay..")
             .should().dependOnClassesThat().resideOutsideOfPackages(

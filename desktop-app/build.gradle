@@ -37,7 +37,7 @@ dependencies {
 
 javafx {
     version = rootProject.ext.javafxVersion
-    modules = ['javafx.controls', 'javafx.media']
+    modules = ['javafx.controls']
 }
 
 application {

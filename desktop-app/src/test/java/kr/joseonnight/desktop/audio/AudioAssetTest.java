@@ -2,9 +2,9 @@ package kr.joseonnight.desktop.audio;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.List;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -58,16 +58,21 @@ class AudioAssetTest {
     }
 
     @Test
-    void importantEffectsHavePriorityOverAttackEffects() {
-        assertThat(List.of(
-                SoundCue.GUARD,
-                SoundCue.LEVEL_UP,
-                SoundCue.CHEST_OPENED,
-                SoundCue.DEFEAT))
-                .allSatisfy(cue -> assertThat(GameAudioService.effectPriority(cue)).isEqualTo(100));
-        Arrays.stream(SoundCue.values())
-                .filter(cue -> cue.name().endsWith("_ATTACK"))
-                .forEach(cue -> assertThat(GameAudioService.effectPriority(cue)).isZero());
+    void everyMappedEffectCanBeDecodedByJavaSound()
+            throws IOException, UnsupportedAudioFileException {
+        for (String path : GameAudioService.EFFECT_PATHS.values()) {
+            try (InputStream source = AudioAssetTest.class.getResourceAsStream(path)) {
+                assertThat(source).as(path).isNotNull();
+                try (BufferedInputStream buffered = new BufferedInputStream(source);
+                        AudioInputStream audio = AudioSystem.getAudioInputStream(buffered)) {
+                    AudioFormat format = audio.getFormat();
+                    assertThat(format.getEncoding()).as(path).isEqualTo(AudioFormat.Encoding.PCM_SIGNED);
+                    assertThat(format.getSampleRate()).as(path).isEqualTo((float) SAMPLE_RATE);
+                    assertThat(format.getSampleSizeInBits()).as(path).isEqualTo(16);
+                    assertThat(format.isBigEndian()).as(path).isFalse();
+                }
+            }
+        }
     }
 
     private static void inspect(AssetExpectation expectation)
