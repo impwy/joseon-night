@@ -1,0 +1,122 @@
+# 조선 야행
+
+조선 다크 판타지를 배경으로 한 독자적인 생존 액션 게임입니다. JavaFX 프런트엔드와 Spring Boot 백엔드를 각각 실행하며, 회원 기능은 Tomcat REST API로, 실시간 게임은 Armeria WebSocket으로 통신합니다.
+
+Google 로그인 후 도깨비 사냥꾼 또는 해금한 질풍 무녀로 쓰러질 때까지 그림자 도깨비와 맞서 싸웁니다. 400마리를 쓰러뜨리면 새로 나타나는 적이 더 튼튼한 도깨비 장수로 바뀝니다. 능력 강화와 아이템 보상을 고르고 주기적으로 생성되는 보물상자에서 진화하며, 서버가 생존 시간·점수·패배를 계산합니다. 캐릭터 고유 결계와 상자에서 얻은 하트가 모두 없을 때 적과 충돌하면 즉시 패배합니다.
+
+## 첫 콘텐츠
+
+| 구분 | 콘텐츠 | 동작 |
+| --- | --- | --- |
+| 캐릭터 | 도깨비 사냥꾼·질풍 무녀 | 호신결계 1회 또는 이동 속도 25% 고유 스킬 |
+| 아이템 | 봉인 부적 외 5종 | 자동 투사체 또는 즉시 낙뢰, 5레벨 재료 두 개로 진화 |
+| 적 | 그림자 도깨비·도깨비 장수 | 플레이어를 직선 추적하고 400킬 이후 신규 적이 2단계로 전환 |
+| 경험치 | 혼불 | 적 사망 시 생성, 300개를 넘으면 누적값을 새 처치 위치로 옮겨 경험치 보존 |
+| 상자 | 노란 상자·보라 상자 | 시작 5개와 60초마다 생성되는 아이템 강화·진화·하트·자석 보상 |
+| 맵 | 달빛 폐허 | 로비 배경과 반복 폐허 바닥, 고정 좌표의 비충돌 장식 |
+
+레벨업하면 일반 능력 강화가 최소 하나 포함되고, 아이템 획득·강화를 합친 서로 다른 선택지 최대 3개가 제시됩니다. 상자에서는 한 번의 치명적인 충돌을 막는 하트나 맵의 모든 혼불을 회수하는 자석도 선택할 수 있습니다. 진화에 사용한 기본 아이템은 다시 나오지 않으며 재료가 겹치지 않는 진화는 여러 개 보유할 수 있습니다. 선택하는 동안 시간과 전투가 모두 멈춥니다.
+
+## 기술 구성
+
+- Java 25
+- Gradle Wrapper 9.6.1
+- Spring Boot 4.1.0
+- Spring Data JPA, PostgreSQL
+- Spring Data Redis
+- Spring Kafka, Apache Kafka
+- Spring Web MVC·Tomcat, Spring Security OAuth2·JWT
+- Bean Validation
+- Lombok 1.18.46
+- Armeria 1.40.0
+- JavaFX 25.0.4
+- Flyway, Docker Compose, H2, PostgreSQL Testcontainers
+- Instancio
+- ArchUnit 1.4.2, SpotBugs Plugin 6.5.10
+
+```text
+joseon-night
+├── game-core       도메인·애플리케이션·어댑터와 Spring Boot·Armeria 백엔드
+└── desktop-app     JavaFX 화면과 DesktopApiClient 프런트엔드
+```
+
+`game-core`는 Splearn과 같은 실용적 헥사고날 패키지 구조를 사용합니다. JPA 포트는 `application.<도메인>.required`에서 `JpaRepository`를 직접 상속하고 Spring Data가 구현합니다. 웹 API는 `adapter.webapi/memberapi`, `rankingapi`, 인증은 `adapter.security`, Kafka는 `adapter.integration.messaging`에 둡니다. 영속 엔티티는 PostgreSQL에 저장하고 60Hz `GameSession`은 메모리에 유지합니다.
+
+`desktop-app` 운영 코드는 `game-core` 프로젝트에 컴파일·런타임 의존하지 않습니다. 시스템 브라우저에서 Google 로그인을 마치고, JavaFX는 입력·선택·뷰포트·일시정지 요청만 WebSocket으로 전송하며 반환된 불변 화면 상태를 그립니다. 추후 React 게임이 추가되면 `adapter.webapi.gameapi`가 같은 application provided 포트를 사용합니다.
+
+## 실행
+
+JDK 25와 실행 중인 Docker Desktop이 필요합니다. 첫 번째 터미널에서 백엔드를 시작한 뒤 두 번째 터미널에서 데스크톱 화면을 시작합니다.
+
+### 로컬 인증 설정
+
+처음 한 번 저장소 루트에서 예시 파일을 복사합니다.
+
+```bash
+cp .env.example .env
+```
+
+`.env.example`에는 로컬 Docker Compose, 서버 포트와 데스크톱 API 주소의 기본값이 들어 있습니다. 루트 `.env`의 `JOSEON_NIGHT_GOOGLE_CLIENT_ID`와 `JOSEON_NIGHT_GOOGLE_CLIENT_SECRET`에는 Google Cloud Console에서 발급한 OAuth 값을 직접 입력하고, HMAC·JWT 키도 설명에 맞게 입력합니다. 두 애플리케이션은 이 파일을 `KEY=value` 형식의 Spring 설정으로 자동으로 읽으므로 IDE 실행 설정에 애플리케이션 환경변수를 따로 추가할 필요가 없습니다. 셸 명령인 `export`나 값을 감싸는 따옴표는 넣지 않습니다.
+
+실제 `.env`와 인증키 파일은 `.gitignore`로 제외되며 `.env.example`만 Git으로 공유합니다. `.env.example`에는 실제 비밀값을 넣지 않습니다. 같은 이름의 운영체제 환경변수가 있으면 `.env`보다 우선하므로 일시적인 재정의에도 사용할 수 있습니다. 나중에 운영 배포를 구성할 때는 로컬 `.env`를 배포하지 않고 별도 비밀 저장소에서 설정 파일을 전달합니다.
+
+```bash
+./gradlew :game-core:bootRun
+```
+
+```bash
+./gradlew :desktop-app:run
+```
+
+`GameCoreApplication`이 PostgreSQL·Redis·Kafka Compose 서비스를 준비하고 Tomcat을 `127.0.0.1:8080`, Armeria를 `127.0.0.1:8081`에 엽니다. `DesktopApplication`은 1280×720 크기 조절 가능 창을 열며 이동 키는 `W`, `A`, `S`, `D`입니다.
+
+전투 중 HUD 설정 버튼 또는 `Esc`로 설정을 열면 서버 게임도 함께 일시정지합니다.
+
+인프라 상태는 다음 명령으로 확인할 수 있습니다.
+
+```bash
+docker compose -f game-core/compose.yaml ps
+```
+
+PostgreSQL은 `127.0.0.1:15432`, Redis는 `127.0.0.1:16379`, Kafka는 `127.0.0.1:29092`에만 노출됩니다. 기존 로컬 서비스와 충돌하지 않도록 전용 호스트 포트를 사용합니다.
+
+Docker Compose를 사용할 때는 [game-core Compose](game-core/compose.yaml)의 접속값이 적용됩니다. 외부 인프라에 연결하려면 `.env`에 `spring.docker.compose.enabled=false`와 [game-core 설정](game-core/src/main/resources/application.yml)에 정의된 `JOSEON_NIGHT_DB_*`, `JOSEON_NIGHT_REDIS_*`, `JOSEON_NIGHT_KAFKA_*` 값을 추가합니다.
+
+IntelliJ에서 `GameCoreApplication`이나 `DesktopApplication`을 직접 실행할 때는 Project SDK와 Gradle JVM을 JDK 25로 지정하고 작업 디렉터리를 저장소 루트로 둡니다. `JAVA_HOME`, `JAVA_OPTS`, `GRADLE_OPTS`는 JVM이 시작되기 전에 사용되므로 Spring용 `.env`에서 설정할 수 없습니다. 데스크톱이 다른 백엔드를 호출해야 하면 `.env`의 `JOSEON_NIGHT_API_URL`을 바꿉니다.
+
+Armeria 상태 확인은 로컬 주소 `127.0.0.1:8081`에서 제공합니다.
+
+```bash
+curl http://127.0.0.1:8081/internal/healthcheck
+```
+
+게임 시작·입력·뷰포트·일시정지·레벨업·상자 선택은 인증된 Armeria WebSocket으로 처리합니다. 클라이언트가 임의 시간이나 점수를 전송하는 REST tick API는 제공하지 않습니다.
+
+## 검증
+
+```bash
+./gradlew clean check
+```
+
+이 명령은 단위·통합·아키텍처 테스트, 실제 Core–Desktop Armeria 계약 테스트와 SpotBugs 정적 분석을 실행합니다. GitHub Actions도 push와 Pull Request에서 Temurin 25로 같은 명령을 실행합니다. JavaFX GUI는 CI에서 실행하지 않으며 macOS 로컬 환경에서 수동으로 확인합니다.
+
+터미널 Gradle 실행은 셸의 `JAVA_HOME`으로 JDK를 고릅니다. 테스트 전용 H2 데이터베이스, 임의 서버 포트, Docker Compose 비활성화와 임시 JWT 키는 테스트 코드가 직접 설정하므로 `.env`에 넣지 않습니다.
+
+## 문서
+
+- [개발 가이드](개발가이드.md)
+- [개발 계획](개발계획.md)
+- [2차 개발 계획](docs/plans/조선-야행-2차-개발계획.md)
+- [3차 개발 계획](docs/plans/조선-야행-3차-연결-UI-오디오-설정-개선계획.md)
+- [4차 개발 계획](docs/plans/조선-야행-4차-도메인-낙뢰-음향-테스트-개선계획.md)
+- [도메인 모델](도메인모델.md)
+- [화면 디자인](화면디자인.md)
+- [자산 제작 기록](ASSETS.md)
+
+## 2차 범위 밖
+
+상점·결제, 계정에 보관하는 보물상자, QueryDSL, 별도 문서형 NoSQL, refresh token·Keychain 로그인 유지, 설치 패키징과 실제 클라우드·TLS 배포는 2차 범위에 포함하지 않습니다. 초기 게임 세션은 단일 서버 메모리에 있으므로 수평 확장은 이후 과제로 둡니다.
+
+## 저작권과 라이선스
+
+원작의 코드, 명칭, 이미지와 음악을 사용하지 않습니다. 이 저장소의 코드와 프로젝트에서 직접 제작한 자산은 [MIT License](LICENSE)로 배포합니다.

@@ -1,0 +1,17 @@
+package kr.joseonnight.application.gameplay.provided;
+
+/**
+ * Framework-neutral render DTO for a circular game entity.
+ */
+public record EntitySnapshot(
+        long id,
+        double x,
+        double y,
+        double radius,
+        double rotationDegrees,
+        String kindId
+) {
+    public EntitySnapshot(long id, double x, double y, double radius, double rotationDegrees) {
+        this(id, x, y, radius, rotationDegrees, "unknown");
+    }
+}

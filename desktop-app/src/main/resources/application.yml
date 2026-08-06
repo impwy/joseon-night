@@ -1,0 +1,22 @@
+spring:
+  config:
+    import: "optional:file:./.env[.properties]"
+  application:
+    name: joseon-night-desktop
+  main:
+    banner-mode: "off"
+    web-application-type: none
+
+joseon-night:
+  desktop-api:
+    base-url: ${JOSEON_NIGHT_API_URL:http://127.0.0.1:8080}
+    connect-timeout: 2s
+    request-timeout: 2s
+  authentication:
+    poll-interval: 1s
+    maximum-poll-duration: 5m
+
+logging:
+  level:
+    root: INFO
+    com.linecorp.armeria: WARN

@@ -1,0 +1,785 @@
+package kr.joseonnight.desktop.view;
+
+import java.net.URI;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
+import javafx.animation.PauseTransition;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Separator;
+import javafx.scene.control.Slider;
+import javafx.scene.control.TextField;
+import javafx.scene.effect.ColorAdjust;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.util.Duration;
+import javafx.util.StringConverter;
+import kr.joseonnight.desktop.audio.AudioScene;
+import kr.joseonnight.desktop.audio.GameAudioService;
+import kr.joseonnight.desktop.authentication.AuthPhase;
+import kr.joseonnight.desktop.authentication.AuthSession;
+import kr.joseonnight.desktop.authentication.AuthState;
+import kr.joseonnight.desktop.client.AuthApiClient;
+import kr.joseonnight.desktop.client.DesktopApiClient;
+import kr.joseonnight.desktop.client.MemberApiClient;
+import kr.joseonnight.desktop.gameplay.DesktopApiStatus;
+import kr.joseonnight.desktop.gameplay.GamePhase;
+import kr.joseonnight.desktop.member.MemberBootstrap;
+import kr.joseonnight.desktop.settings.AudioSettings;
+import kr.joseonnight.desktop.settings.TargetFps;
+
+/** Owns the Login → Lobby → Settings/Combat root-screen transitions. */
+public final class DesktopRootView extends StackPane implements AutoCloseable {
+    private static final Duration DEFEAT_UNLOCK_REFRESH_DELAY = Duration.millis(250.0);
+    private static final int DEFEAT_UNLOCK_REFRESH_ATTEMPTS = 12;
+    private static final String GALE_SHAMAN_ID = "gale-shaman";
+    private static final String PANEL_STYLE = "-fx-background-color: rgba(9, 15, 24, 0.94);"
+            + "-fx-background-radius: 14; -fx-border-color: #c8a35a; -fx-border-radius: 14;"
+            + "-fx-border-width: 2;";
+    private static final String TITLE_STYLE =
+            "-fx-font-size: 38px; -fx-font-weight: bold; -fx-text-fill: #f4dca3;";
+    private static final String TEXT_STYLE = "-fx-font-size: 16px; -fx-text-fill: #e9edf2;";
+    private static final String BUTTON_STYLE = "-fx-background-color: #a7353f; -fx-text-fill: white;"
+            + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-background-radius: 8;"
+            + "-fx-padding: 10 18 10 18;";
+    private static final String GOOGLE_LOGIN_BUTTON_STYLE = "-fx-background-color: #ffffff; -fx-text-fill: #1f1f1f;"
+            + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-background-radius: 8;"
+            + "-fx-border-color: #747775; -fx-border-radius: 8; -fx-border-width: 1;"
+            + "-fx-padding: 8 16 8 12;";
+    static final String GOOGLE_LOGIN_BUTTON_TEXT = "Google Login";
+    static final String GOOGLE_LOGIN_ICON_RESOURCE = "/assets/brand/google-g-sign-in.png";
+
+    private final AuthApiClient authApiClient;
+    private final MemberApiClient memberApiClient;
+    private final DesktopApiClient gameApiClient;
+    private final GameAudioService audioService;
+    private final Consumer<String> browserOpener;
+    private final GameView gameView;
+    private final SpriteAtlas sprites = new SpriteAtlas();
+    private final ImageView lobbyBackground = createLobbyBackground();
+    private final PauseTransition defeatUnlockRefreshDelay =
+            new PauseTransition(DEFEAT_UNLOCK_REFRESH_DELAY);
+
+    private final VBox loginPane = panel();
+    private final VBox registrationPane = panel();
+    private final VBox lobbyPane = panel();
+    private final VBox settingsPane = panel();
+    private final Label loginMessage = bodyLabel();
+    private final Button loginButton = googleLoginButton();
+    private final ProgressIndicator loginProgress = new ProgressIndicator();
+    private final TextField nicknameField = new TextField();
+    private final Label registrationMessage = bodyLabel();
+    private final Label welcomeLabel = bodyLabel();
+    private final HBox characterCards = new HBox(18);
+    private final Map<String, VBox> characterCardNodes = new LinkedHashMap<>();
+    private final Button startGameButton = primaryButton("야행 시작");
+    private final CheckBox mutedCheckBox = new CheckBox("모든 소리 끄기");
+    private final Slider musicVolumeSlider = volumeSlider();
+    private final Slider effectsVolumeSlider = volumeSlider();
+    private final Label musicVolumeLabel = bodyLabel();
+    private final Label effectsVolumeLabel = bodyLabel();
+    private final ComboBox<TargetFps> targetFpsSelector = new ComboBox<>();
+    private final Label settingsMessage = bodyLabel();
+    private final Button settingsBackButton = primaryButton("로비로 돌아가기");
+
+    private RootScreen screen = RootScreen.LOGIN;
+    private MemberBootstrap bootstrap = MemberBootstrap.fallback();
+    private AudioSettings audioSettings = AudioSettings.defaults();
+    private String loadedSessionToken;
+    private String selectedCharacterId;
+    private URI openedAuthorizationUri;
+    private long lobbyBootstrapGeneration;
+    private boolean applyingSettings;
+    private boolean combatSettingsVisible;
+
+    public DesktopRootView(
+            AuthApiClient authApiClient,
+            MemberApiClient memberApiClient,
+            DesktopApiClient gameApiClient,
+            GameAudioService audioService,
+            Consumer<String> browserOpener) {
+        this.authApiClient = Objects.requireNonNull(authApiClient, "authApiClient");
+        this.memberApiClient = Objects.requireNonNull(memberApiClient, "memberApiClient");
+        this.gameApiClient = Objects.requireNonNull(gameApiClient, "gameApiClient");
+        this.audioService = Objects.requireNonNull(audioService, "audioService");
+        this.browserOpener = Objects.requireNonNull(browserOpener, "browserOpener");
+        gameView = new GameView(
+                gameApiClient,
+                this::restartGame,
+                this::returnToLobby,
+                this::toggleCombatSettings);
+
+        setPrefSize(1280, 720);
+        setStyle("-fx-background-color: linear-gradient(to bottom, #101b27, #080d14);");
+        configureLoginPane();
+        configureRegistrationPane();
+        configureLobbyPane();
+        configureSettingsPane();
+        lobbyBackground.fitWidthProperty().bind(widthProperty());
+        lobbyBackground.fitHeightProperty().bind(heightProperty());
+        getChildren().addAll(lobbyBackground, gameView, loginPane, registrationPane, lobbyPane, settingsPane);
+
+        authApiClient.setStateListener(this::refreshAuthenticationOnJavaFxThread);
+        gameApiClient.setStateListener(this::refreshGameOnJavaFxThread);
+        memberApiClient.setFailureListener(message -> runOnJavaFxThread(() -> {
+            settingsMessage.setText(message);
+            settingsMessage.setStyle("-fx-font-size: 14px; -fx-text-fill: #ffb1b1;");
+        }));
+        audioService.applySettings(audioSettings);
+        audioService.switchScene(AudioScene.LOBBY);
+        refreshAuthentication();
+    }
+
+    public void installInputHandlers(Scene scene) {
+        gameView.installInputHandlers(scene);
+    }
+
+    public void start() {
+        gameView.startLoop();
+    }
+
+    public void clearInput() {
+        gameView.clearInputAfterFocusLoss();
+    }
+
+    @Override
+    public void close() {
+        authApiClient.setStateListener(() -> { });
+        gameApiClient.setStateListener(() -> { });
+        memberApiClient.setFailureListener(ignored -> { });
+        lobbyBootstrapGeneration++;
+        defeatUnlockRefreshDelay.stop();
+        gameView.stopLoop();
+        audioService.close();
+    }
+
+    private void configureLoginPane() {
+        loginPane.setMaxSize(620, 600);
+        Label eyebrow = bodyLabel();
+        eyebrow.setText("GOOGLE 계정으로 계속");
+        eyebrow.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #c8a35a;");
+        Label title = title("조선 야행");
+        Label subtitle = bodyLabel();
+        subtitle.setText("달빛 아래 펼쳐지는 조선 다크 판타지 생존 야행에 참여하세요.");
+        subtitle.setStyle("-fx-font-size: 17px; -fx-text-fill: #b9c7d7;");
+        subtitle.setMaxWidth(460);
+        Separator divider = new Separator();
+        divider.setMaxWidth(420);
+        divider.setStyle("-fx-opacity: 0.35;");
+        loginMessage.setWrapText(true);
+        loginMessage.setMaxWidth(390);
+        loginProgress.setMaxSize(24, 24);
+        loginProgress.setPrefSize(24, 24);
+        loginProgress.setVisible(false);
+        loginProgress.setManaged(false);
+        HBox progressRow = new HBox(10, loginProgress, loginMessage);
+        progressRow.setAlignment(Pos.CENTER);
+        loginButton.setOnAction(ignored -> {
+            openedAuthorizationUri = null;
+            authApiClient.beginLogin();
+        });
+        loginPane.getChildren().addAll(eyebrow, title, subtitle, divider, progressRow, loginButton);
+    }
+
+    private void configureRegistrationPane() {
+        Label title = title("첫 야행 준비");
+        Label description = bodyLabel();
+        description.setText("다른 플레이어에게 보일 닉네임을 정해 주세요.");
+        nicknameField.setPromptText("닉네임");
+        nicknameField.setMaxWidth(320);
+        nicknameField.setStyle("-fx-font-size: 16px; -fx-padding: 10;");
+        registrationMessage.setStyle("-fx-font-size: 14px; -fx-text-fill: #ffb1b1;");
+        Button registerButton = primaryButton("닉네임 등록");
+        registerButton.setOnAction(ignored -> registerNickname());
+        nicknameField.setOnAction(ignored -> registerNickname());
+        registrationPane.getChildren().addAll(
+                title, description, nicknameField, registrationMessage, registerButton);
+    }
+
+    private void configureLobbyPane() {
+        lobbyPane.setMaxSize(1040, 660);
+        Label title = title("조선 야행");
+        welcomeLabel.setStyle("-fx-font-size: 19px; -fx-text-fill: #f4e7c5;");
+        Label characterLabel = bodyLabel();
+        characterLabel.setText("출전 인물 · 시작 아이템과 고유 스킬을 확인하세요");
+        characterCards.setAlignment(Pos.CENTER);
+        characterCards.setPadding(new Insets(8));
+        ScrollPane characterScroll = new ScrollPane(characterCards);
+        characterScroll.setFitToHeight(true);
+        characterScroll.setPannable(true);
+        characterScroll.setPrefViewportHeight(330);
+        characterScroll.setMaxWidth(940);
+        characterScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+
+        startGameButton.setDisable(true);
+        startGameButton.setOnAction(ignored -> startGame());
+        Button settingsButton = secondaryButton("설정");
+        settingsButton.setOnAction(ignored -> showScreen(RootScreen.SETTINGS));
+        Button logoutButton = secondaryButton("로그아웃");
+        logoutButton.setOnAction(ignored -> logout());
+        HBox actions = new HBox(12, startGameButton, settingsButton, logoutButton);
+        actions.setAlignment(Pos.CENTER);
+        lobbyPane.getChildren().addAll(
+                title, welcomeLabel, characterLabel, characterScroll, actions);
+    }
+
+    private void configureSettingsPane() {
+        settingsPane.setMaxSize(620, 620);
+        Label title = title("환경설정");
+        mutedCheckBox.setStyle(TEXT_STYLE);
+        mutedCheckBox.setOnAction(ignored -> updateAudioSettings());
+        musicVolumeSlider.valueProperty().addListener((ignored, oldValue, newValue) -> updateAudioSettings());
+        effectsVolumeSlider.valueProperty().addListener((ignored, oldValue, newValue) -> updateAudioSettings());
+        targetFpsSelector.getItems().setAll(TargetFps.values());
+        targetFpsSelector.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(TargetFps value) {
+                return value == null ? "" : value.displayName();
+            }
+
+            @Override
+            public TargetFps fromString(String value) {
+                return TargetFps.valueOf(value);
+            }
+        });
+        targetFpsSelector.setMaxWidth(420);
+        targetFpsSelector.setPrefWidth(420);
+        targetFpsSelector.setStyle("-fx-font-size: 15px;");
+        targetFpsSelector.setOnAction(ignored -> updateAudioSettings());
+        Label frameLabel = bodyLabel();
+        frameLabel.setText("화면 프레임");
+        settingsMessage.setStyle("-fx-font-size: 14px; -fx-text-fill: #afbed0;");
+        settingsBackButton.setOnAction(ignored -> closeSettings());
+        settingsPane.getChildren().addAll(
+                title,
+                mutedCheckBox,
+                musicVolumeLabel,
+                musicVolumeSlider,
+                effectsVolumeLabel,
+                effectsVolumeSlider,
+                frameLabel,
+                targetFpsSelector,
+                settingsMessage,
+                settingsBackButton);
+        applyAudioSettingsToControls();
+    }
+
+    private void refreshAuthenticationOnJavaFxThread() {
+        runOnJavaFxThread(this::refreshAuthentication);
+    }
+
+    private void refreshAuthentication() {
+        AuthState state = authApiClient.state();
+        boolean loginInProgress = state.phase() == AuthPhase.STARTING_ATTEMPT
+                || state.phase() == AuthPhase.WAITING_FOR_BROWSER;
+        loginMessage.setText(state.userMessage());
+        loginButton.setDisable(loginInProgress);
+        loginButton.setText(GOOGLE_LOGIN_BUTTON_TEXT);
+        loginProgress.setVisible(loginInProgress);
+        loginProgress.setManaged(loginInProgress);
+
+        switch (state.phase()) {
+            case AUTHENTICATED -> onAuthenticated(state.session());
+            case REGISTRATION_REQUIRED -> {
+                registrationMessage.setText("");
+                showScreen(RootScreen.REGISTRATION);
+                nicknameField.requestFocus();
+            }
+            case WAITING_FOR_BROWSER -> {
+                showScreen(RootScreen.LOGIN);
+                openAuthorizationPage(state.authorizationUri());
+            }
+            case SIGNED_OUT, STARTING_ATTEMPT, EXPIRED, FORBIDDEN, OFFLINE, FAILED ->
+                    showScreen(RootScreen.LOGIN);
+        }
+    }
+
+    private void onAuthenticated(AuthSession session) {
+        if (session == null) {
+            return;
+        }
+        showScreen(RootScreen.LOBBY);
+        if (session.accessToken().equals(loadedSessionToken)) {
+            return;
+        }
+        long refreshGeneration = beginLobbyBootstrapRefresh();
+        loadedSessionToken = session.accessToken();
+        bootstrap = MemberBootstrap.fallback();
+        selectedCharacterId = null;
+        characterCardNodes.clear();
+        characterCards.getChildren().clear();
+        startGameButton.setDisable(true);
+        welcomeLabel.setText("로비 정보를 불러오고 있습니다…");
+        memberApiClient.loadBootstrap(session.accessToken()).whenComplete((value, failure) ->
+                runOnJavaFxThread(() -> {
+                    if (!isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
+                        return;
+                    }
+                    if (failure == null) {
+                        bootstrap = value;
+                    } else {
+                        bootstrap = MemberBootstrap.fallback();
+                    }
+                    populateLobby();
+                }));
+        memberApiClient.loadSettings(session.accessToken()).whenComplete((value, failure) ->
+                runOnJavaFxThread(() -> {
+                    if (!isCurrentSession(session)) {
+                        return;
+                    }
+                    if (failure == null) {
+                        audioSettings = value;
+                        settingsMessage.setText("서버에 저장된 설정을 불러왔습니다.");
+                    } else {
+                        audioSettings = AudioSettings.defaults();
+                        settingsMessage.setText("기본 소리 설정을 사용합니다.");
+                    }
+                    applyAudioSettingsToControls();
+                    audioService.applySettings(audioSettings);
+                    gameView.setTargetFps(audioSettings.targetFps());
+                }));
+    }
+
+    private void populateLobby() {
+        welcomeLabel.setText(bootstrap.nickname() + " 님, 달빛 폐허가 기다립니다.");
+        selectedCharacterId = null;
+        characterCardNodes.clear();
+        characterCards.getChildren().clear();
+        for (MemberBootstrap.CharacterOption character : bootstrap.characters()) {
+            VBox card = createCharacterCard(character);
+            characterCardNodes.put(character.characterId(), card);
+            characterCards.getChildren().add(card);
+        }
+        bootstrap.firstUnlockedCharacter().ifPresent(this::selectCharacter);
+    }
+
+    private void startGame() {
+        AuthSession session = authApiClient.state().session();
+        MemberBootstrap.CharacterOption selected = bootstrap.unlockedCharacter(selectedCharacterId)
+                .orElse(null);
+        if (session == null || selected == null) {
+            welcomeLabel.setText("로그인과 캐릭터 선택을 확인해 주세요.");
+            return;
+        }
+        audioService.beginNewGame();
+        double viewportWidth = getWidth() > 0.0 ? getWidth() : gameView.viewportWidth();
+        double viewportHeight = getHeight() > 0.0 ? getHeight() : gameView.viewportHeight();
+        gameApiClient.startNewGame(
+                session.accessToken(),
+                selected.characterId(),
+                viewportWidth,
+                viewportHeight);
+        showScreen(RootScreen.COMBAT);
+    }
+
+    private void restartGame() {
+        audioService.beginNewGame();
+        gameApiClient.startNewGame();
+        showScreen(RootScreen.COMBAT);
+    }
+
+    private void returnToLobby() {
+        boolean waitForDefeatUnlock = gameApiClient.snapshot().phase() == GamePhase.DEFEAT;
+        gameApiClient.disconnect();
+        showScreen(RootScreen.LOBBY);
+        AuthSession session = authApiClient.state().session();
+        if (session != null) {
+            long refreshGeneration = beginLobbyBootstrapRefresh();
+            refreshLobbyBootstrap(session, waitForDefeatUnlock, 0, refreshGeneration);
+        }
+    }
+
+    private void refreshLobbyBootstrap(
+            AuthSession session,
+            boolean waitForDefeatUnlock,
+            int attempt,
+            long refreshGeneration) {
+        welcomeLabel.setText("로비 정보를 다시 불러오고 있습니다…");
+        memberApiClient.loadBootstrap(session.accessToken()).whenComplete((value, failure) ->
+                runOnJavaFxThread(() -> {
+                    if (!isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
+                        return;
+                    }
+                    if (failure == null) {
+                        bootstrap = value;
+                    }
+                    populateLobby();
+                    if (failure != null) {
+                        welcomeLabel.setText(bootstrap.nickname()
+                                + " 님, 현재 로비 정보를 표시합니다.");
+                    }
+                    scheduleDefeatUnlockRefresh(
+                            session, waitForDefeatUnlock, attempt, refreshGeneration);
+                }));
+    }
+
+    private void scheduleDefeatUnlockRefresh(
+            AuthSession session,
+            boolean waitForDefeatUnlock,
+            int attempt,
+            long refreshGeneration) {
+        boolean unlocked = bootstrap.unlockedCharacter(GALE_SHAMAN_ID).isPresent();
+        if (!waitForDefeatUnlock || unlocked || attempt + 1 >= DEFEAT_UNLOCK_REFRESH_ATTEMPTS) {
+            return;
+        }
+        defeatUnlockRefreshDelay.stop();
+        defeatUnlockRefreshDelay.setOnFinished(ignored -> {
+            if (screen == RootScreen.LOBBY
+                    && isCurrentLobbyBootstrapRefresh(session, refreshGeneration)) {
+                refreshLobbyBootstrap(session, true, attempt + 1, refreshGeneration);
+            }
+        });
+        defeatUnlockRefreshDelay.playFromStart();
+    }
+
+    private long beginLobbyBootstrapRefresh() {
+        defeatUnlockRefreshDelay.stop();
+        return ++lobbyBootstrapGeneration;
+    }
+
+    private boolean isCurrentLobbyBootstrapRefresh(
+            AuthSession session,
+            long refreshGeneration) {
+        return refreshGeneration == lobbyBootstrapGeneration && isCurrentSession(session);
+    }
+
+    private void toggleCombatSettings() {
+        if (screen != RootScreen.COMBAT) {
+            return;
+        }
+        if (combatSettingsVisible) {
+            closeSettings();
+            return;
+        }
+        var snapshot = gameApiClient.snapshot();
+        GamePhase phase = snapshot.phase();
+        if (phase != GamePhase.RUNNING
+                && phase != GamePhase.LEVEL_UP
+                && phase != GamePhase.CHEST_REWARD) {
+            return;
+        }
+        gameView.clearInput();
+        gameApiClient.setGamePaused(true);
+        combatSettingsVisible = true;
+        settingsBackButton.setText("게임으로 돌아가기");
+        applyScreenState();
+    }
+
+    private void closeSettings() {
+        if (combatSettingsVisible) {
+            gameApiClient.setGamePaused(false);
+            combatSettingsVisible = false;
+            applyScreenState();
+            return;
+        }
+        showScreen(RootScreen.LOBBY);
+    }
+
+    private void logout() {
+        lobbyBootstrapGeneration++;
+        defeatUnlockRefreshDelay.stop();
+        loadedSessionToken = null;
+        bootstrap = MemberBootstrap.fallback();
+        selectedCharacterId = null;
+        audioSettings = AudioSettings.defaults();
+        applyAudioSettingsToControls();
+        audioService.applySettings(audioSettings);
+        gameView.setTargetFps(audioSettings.targetFps());
+        gameApiClient.clearSession();
+        authApiClient.logout();
+    }
+
+    private void registerNickname() {
+        try {
+            registrationMessage.setText("");
+            authApiClient.registerNickname(nicknameField.getText());
+        } catch (IllegalArgumentException exception) {
+            registrationMessage.setText("닉네임을 입력해 주세요.");
+        } catch (IllegalStateException exception) {
+            registrationMessage.setText("로그인부터 다시 시도해 주세요.");
+        }
+    }
+
+    private void openAuthorizationPage(URI authorizationUri) {
+        if (authorizationUri == null || authorizationUri.equals(openedAuthorizationUri)) {
+            return;
+        }
+        openedAuthorizationUri = authorizationUri;
+        try {
+            browserOpener.accept(authorizationUri.toString());
+        } catch (RuntimeException exception) {
+            loginMessage.setText("브라우저를 열지 못했습니다. Google 로그인을 다시 시도해 주세요.");
+            loginButton.setDisable(false);
+            loginProgress.setVisible(false);
+            loginProgress.setManaged(false);
+        }
+    }
+
+    private void updateAudioSettings() {
+        if (applyingSettings) {
+            return;
+        }
+        int musicVolume = (int) Math.round(musicVolumeSlider.getValue());
+        int effectsVolume = (int) Math.round(effectsVolumeSlider.getValue());
+        TargetFps targetFps = targetFpsSelector.getValue() == null
+                ? TargetFps.FPS_60
+                : targetFpsSelector.getValue();
+        audioSettings = new AudioSettings(
+                mutedCheckBox.isSelected(), musicVolume, effectsVolume, targetFps);
+        musicVolumeLabel.setText("배경음악 음량  %d".formatted(musicVolume));
+        effectsVolumeLabel.setText("효과음 음량  %d".formatted(effectsVolume));
+        audioService.applySettings(audioSettings);
+        gameView.setTargetFps(targetFps);
+        AuthSession session = authApiClient.state().session();
+        if (session != null) {
+            settingsMessage.setText("변경 후 0.5초 뒤 자동 저장됩니다.");
+            memberApiClient.saveSettingsDebounced(session.accessToken(), audioSettings);
+        }
+    }
+
+    private void applyAudioSettingsToControls() {
+        applyingSettings = true;
+        try {
+            mutedCheckBox.setSelected(audioSettings.muted());
+            musicVolumeSlider.setValue(audioSettings.musicVolume());
+            effectsVolumeSlider.setValue(audioSettings.effectsVolume());
+            targetFpsSelector.setValue(audioSettings.targetFps());
+            musicVolumeLabel.setText("배경음악 음량  %d".formatted(audioSettings.musicVolume()));
+            effectsVolumeLabel.setText("효과음 음량  %d".formatted(audioSettings.effectsVolume()));
+        } finally {
+            applyingSettings = false;
+        }
+    }
+
+    private void refreshGameOnJavaFxThread() {
+        runOnJavaFxThread(() -> {
+            gameView.refreshFromClient();
+            audioService.consume(gameApiClient.snapshot());
+            applyScreenState();
+            DesktopApiStatus.State connectionState = gameApiClient.status().state();
+            if (connectionState == DesktopApiStatus.State.AUTHENTICATION_EXPIRED) {
+                loadedSessionToken = null;
+                gameApiClient.clearSession();
+                authApiClient.logout();
+                loginMessage.setText("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+            }
+        });
+    }
+
+    private void showScreen(RootScreen nextScreen) {
+        screen = nextScreen;
+        combatSettingsVisible = false;
+        settingsBackButton.setText("로비로 돌아가기");
+        applyScreenState();
+    }
+
+    private void applyScreenState() {
+        loginPane.setVisible(screen == RootScreen.LOGIN);
+        loginPane.setManaged(screen == RootScreen.LOGIN);
+        registrationPane.setVisible(screen == RootScreen.REGISTRATION);
+        registrationPane.setManaged(screen == RootScreen.REGISTRATION);
+        lobbyPane.setVisible(screen == RootScreen.LOBBY);
+        lobbyPane.setManaged(screen == RootScreen.LOBBY);
+        boolean combat = screen == RootScreen.COMBAT;
+        boolean settingsVisible = screen == RootScreen.SETTINGS || combatSettingsVisible;
+        settingsPane.setVisible(settingsVisible);
+        settingsPane.setManaged(settingsVisible);
+        gameView.setVisible(combat);
+        gameView.setManaged(combat);
+        lobbyBackground.setVisible(!combat);
+        var snapshot = gameApiClient.snapshot();
+        GamePhase phase = snapshot.phase();
+        boolean activeGame = phase == GamePhase.RUNNING
+                || phase == GamePhase.LEVEL_UP
+                || phase == GamePhase.CHEST_REWARD;
+        gameView.setInputEnabled(combat
+                && !combatSettingsVisible
+                && activeGame
+                && !snapshot.paused());
+        audioService.switchScene(combat ? AudioScene.COMBAT : AudioScene.LOBBY);
+    }
+
+    private boolean isCurrentSession(AuthSession session) {
+        AuthSession current = authApiClient.state().session();
+        return current != null && current.accessToken().equals(session.accessToken());
+    }
+
+    private VBox createCharacterCard(MemberBootstrap.CharacterOption character) {
+        ImageView portrait = new ImageView(sprites.player(character.characterId()));
+        portrait.setFitWidth(128);
+        portrait.setFitHeight(128);
+        portrait.setPreserveRatio(true);
+        portrait.setSmooth(false);
+        if (!character.unlocked()) {
+            ColorAdjust silhouette = new ColorAdjust();
+            silhouette.setSaturation(-1.0);
+            silhouette.setBrightness(-0.72);
+            portrait.setEffect(silhouette);
+            portrait.setOpacity(0.72);
+        }
+
+        Label name = new Label(character.displayName());
+        name.setStyle("-fx-font-size: 21px; -fx-font-weight: bold; -fx-text-fill: #f4dca3;");
+        Label description = cardLabel(character.description(), "#b9c7d7", 13);
+        Label startingItem = cardLabel(
+                "시작 아이템 · " + character.startingItem().displayName(), "#f1d58d", 14);
+        Label skill = cardLabel(
+                "고유 스킬 · " + character.skill().displayName(), "#b7d9e9", 14);
+        Label skillDescription = cardLabel(character.skill().description(), "#98aabd", 12);
+        Label status = cardLabel(character.unlocked() ? "선택 가능" : "잠김", "#d5b86f", 13);
+        status.setStyle(status.getStyle() + " -fx-font-weight: bold;");
+
+        VBox card = new VBox(7, portrait, name, description, startingItem, skill, skillDescription, status);
+        card.setAlignment(Pos.CENTER);
+        card.setPadding(new Insets(16));
+        card.setPrefSize(310, 315);
+        card.setMaxSize(310, 315);
+        card.setStyle(characterCardStyle(false, character.unlocked()));
+        if (character.unlocked()) {
+            card.setOnMouseClicked(ignored -> selectCharacter(character));
+        }
+        return card;
+    }
+
+    private void selectCharacter(MemberBootstrap.CharacterOption selected) {
+        if (!selected.unlocked()) {
+            return;
+        }
+        selectedCharacterId = selected.characterId();
+        startGameButton.setDisable(false);
+        for (MemberBootstrap.CharacterOption character : bootstrap.characters()) {
+            VBox card = characterCardNodes.get(character.characterId());
+            if (card != null) {
+                card.setStyle(characterCardStyle(
+                        character.characterId().equals(selectedCharacterId), character.unlocked()));
+            }
+        }
+    }
+
+    private static String characterCardStyle(boolean selected, boolean unlocked) {
+        String border = selected ? "#e2bb62" : "#435468";
+        String background = unlocked ? "rgba(19, 31, 44, 0.96)" : "rgba(12, 18, 27, 0.96)";
+        int borderWidth = selected ? 3 : 1;
+        return "-fx-background-color: " + background + "; -fx-background-radius: 12;"
+                + " -fx-border-color: " + border + "; -fx-border-radius: 12;"
+                + " -fx-border-width: " + borderWidth + ";";
+    }
+
+    private static Label cardLabel(String text, String color, int fontSize) {
+        Label label = new Label(text == null ? "" : text);
+        label.setStyle("-fx-font-size: " + fontSize + "px; -fx-text-fill: " + color + ";");
+        label.setWrapText(true);
+        label.setMaxWidth(270);
+        label.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        return label;
+    }
+
+    private static VBox panel() {
+        VBox pane = new VBox(16);
+        pane.setAlignment(Pos.CENTER);
+        pane.setPadding(new Insets(38));
+        pane.setMaxSize(570, 520);
+        pane.setStyle(PANEL_STYLE);
+        return pane;
+    }
+
+    private static ImageView createLobbyBackground() {
+        var resource = DesktopRootView.class.getResource(
+                "/assets/backgrounds/lobby-moonlit-courtyard.png");
+        ImageView view = resource == null
+                ? new ImageView()
+                : new ImageView(new Image(resource.toExternalForm(), true));
+        view.setPreserveRatio(false);
+        view.setSmooth(false);
+        view.setMouseTransparent(true);
+        return view;
+    }
+
+    private static Label title(String text) {
+        Label label = new Label(text);
+        label.setStyle(TITLE_STYLE);
+        return label;
+    }
+
+    private static Label bodyLabel() {
+        Label label = new Label();
+        label.setStyle(TEXT_STYLE);
+        label.setWrapText(true);
+        label.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        return label;
+    }
+
+    private static Button primaryButton(String text) {
+        Button button = new Button(text);
+        button.setStyle(BUTTON_STYLE);
+        button.setMinWidth(220);
+        return button;
+    }
+
+    private static Button googleLoginButton() {
+        Image icon = new Image(Objects.requireNonNull(
+                        DesktopRootView.class.getResource(GOOGLE_LOGIN_ICON_RESOURCE),
+                        "Google sign-in icon resource")
+                .toExternalForm());
+        ImageView iconView = new ImageView(icon);
+        iconView.setFitWidth(20);
+        iconView.setFitHeight(20);
+        iconView.setPreserveRatio(true);
+        iconView.setSmooth(true);
+
+        Button button = new Button(GOOGLE_LOGIN_BUTTON_TEXT, iconView);
+        button.setAlignment(Pos.CENTER);
+        button.setContentDisplay(ContentDisplay.LEFT);
+        button.setStyle(GOOGLE_LOGIN_BUTTON_STYLE);
+        button.setMinWidth(260);
+        return button;
+    }
+
+    private static Button secondaryButton(String text) {
+        Button button = new Button(text);
+        button.setStyle("-fx-background-color: #32465c; -fx-text-fill: white;"
+                + "-fx-font-size: 15px; -fx-background-radius: 8; -fx-padding: 9 16 9 16;");
+        button.setMinWidth(220);
+        return button;
+    }
+
+    private static Slider volumeSlider() {
+        Slider slider = new Slider(0, 100, 0);
+        slider.setShowTickMarks(true);
+        slider.setMajorTickUnit(25);
+        slider.setBlockIncrement(5);
+        slider.setMaxWidth(420);
+        return slider;
+    }
+
+    private static void runOnJavaFxThread(Runnable operation) {
+        if (Platform.isFxApplicationThread()) {
+            operation.run();
+        } else {
+            Platform.runLater(operation);
+        }
+    }
+
+    private enum RootScreen {
+        LOGIN,
+        REGISTRATION,
+        LOBBY,
+        SETTINGS,
+        COMBAT
+    }
+
+}
